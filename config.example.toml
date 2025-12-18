@@ -134,3 +134,11 @@ message = "Consider using 'git switch <branch>' or 'git restore <file>' instead"
 [[suggestions]]
 command = "docker-compose"
 message = "Use 'docker compose' (v2) instead of 'docker-compose'"
+
+[[suggestions]]
+command = "find"
+message = "Use the Glob tool or 'fd' for file search"
+
+[[suggestions]]
+command = "grep"
+message = "Use the Grep tool instead of grep/rg"
