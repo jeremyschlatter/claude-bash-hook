@@ -214,31 +214,36 @@ fn shorten_command(command: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    fn test_config() -> Config {
+        Config::load(Path::new("config.example.toml")).expect("Failed to load test config")
+    }
 
     #[test]
     fn test_simple_allow() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("ls -la", &config, false);
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_pipeline() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("ls | grep foo", &config, false);
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_dangerous_command() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("rm -rf /", &config, false);
         assert_eq!(result.permission, Permission::Deny);
     }
 
     #[test]
     fn test_sudo_wrapper() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("sudo ls", &config, false);
         // sudo unwraps to ls, which is allowed
         assert_eq!(result.permission, Permission::Allow);
@@ -246,7 +251,7 @@ mod tests {
 
     #[test]
     fn test_sudo_dangerous() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("sudo rm -rf /", &config, false);
         // sudo unwraps to rm -rf /, which is denied
         assert_eq!(result.permission, Permission::Deny);
@@ -254,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_chain_with_dangerous() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("ls && rm -rf /tmp", &config, false);
         // Most restrictive should be deny
         assert_eq!(result.permission, Permission::Deny);
@@ -262,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_env_dangerous() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("env VAR=1 rm -rf /", &config, false);
         // env unwraps to rm -rf /, which is denied
         assert_eq!(result.permission, Permission::Deny);
@@ -270,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_var_assignment_safe() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("VAR=1 ls -la", &config, false);
         // ls is allowed even with env var
         assert_eq!(result.permission, Permission::Allow);
@@ -278,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_git_suggestion() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("git checkout main", &config, false);
         // Should have a suggestion
         assert!(result.suggestion.is_some());
@@ -286,7 +291,7 @@ mod tests {
 
     #[test]
     fn test_kubectl_exec_safe() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("kubectl exec mypod -- ls -la", &config, false);
         // kubectl exec unwraps to ls -la, which is allowed
         assert_eq!(result.permission, Permission::Allow);
@@ -294,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_kubectl_exec_dangerous() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("kubectl exec -n prod mypod -- rm -rf /", &config, false);
         // kubectl exec unwraps to rm -rf /, which is denied
         assert_eq!(result.permission, Permission::Deny);
@@ -302,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_kubectl_get_allowed() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("kubectl get pods", &config, false);
         // kubectl get is allowed (not a wrapper, falls through to default)
         assert_eq!(result.permission, Permission::Allow);
@@ -310,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_sed_allowed() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("echo test | sed 's/t/x/'", &config, false);
         // sed without -i is allowed
         assert_eq!(result.permission, Permission::Allow);
@@ -318,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_sed_i_asks_without_edit_mode() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("sed -i 's/foo/bar/' file.txt", &config, false);
         // sed -i asks when not in edit mode
         assert_eq!(result.permission, Permission::Ask);
@@ -326,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_sed_i_allowed_with_edit_mode() {
-        let config = Config::default();
+        let config = test_config();
         let result = analyze_command("sed -i 's/foo/bar/' file.txt", &config, true);
         // sed -i allowed when in edit mode
         assert_eq!(result.permission, Permission::Allow);

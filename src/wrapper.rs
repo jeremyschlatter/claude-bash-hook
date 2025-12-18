@@ -331,6 +331,7 @@ fn unwrap_env(cmd: &Command) -> Option<UnwrapResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     fn make_cmd(name: &str, args: &[&str]) -> Command {
         Command {
@@ -340,9 +341,13 @@ mod tests {
         }
     }
 
+    fn test_config() -> Config {
+        Config::load(Path::new("config.example.toml")).expect("Failed to load test config")
+    }
+
     #[test]
     fn test_sudo_simple() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("sudo", &["ls", "-la"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, Some("ls -la".to_string()));
@@ -350,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_sudo_with_options() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("sudo", &["-A", "-u", "root", "ls"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, Some("ls".to_string()));
@@ -358,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_ssh_with_command() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("ssh", &["user@host", "ls", "-la"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.host, Some("host".to_string()));
@@ -367,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_ssh_with_options() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("ssh", &["-p", "22", "-i", "key.pem", "host", "whoami"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.host, Some("host".to_string()));
@@ -376,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_scp() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("scp", &["file.txt", "user@host:/path/"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.host, Some("host".to_string()));
@@ -384,7 +389,7 @@ mod tests {
 
     #[test]
     fn test_env() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("env", &["VAR=value", "ls"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, Some("ls".to_string()));
@@ -392,7 +397,7 @@ mod tests {
 
     #[test]
     fn test_env_with_flags() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("env", &["VAR=1", "rm", "-rf", "/tmp"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, Some("rm -rf /tmp".to_string()));
@@ -400,7 +405,7 @@ mod tests {
 
     #[test]
     fn test_nice_with_flags() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("nice", &["-n", "10", "ls", "-la"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, Some("ls -la".to_string()));
@@ -408,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_kubectl_exec_simple() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("kubectl", &["exec", "mypod", "--", "ls", "-la"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, Some("ls -la".to_string()));
@@ -417,7 +422,7 @@ mod tests {
 
     #[test]
     fn test_kubectl_exec_with_options() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("kubectl", &["exec", "-it", "mypod", "-c", "mycontainer", "--", "/bin/bash"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, Some("/bin/bash".to_string()));
@@ -425,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_kubectl_exec_with_namespace() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("kubectl", &["exec", "-n", "prod", "mypod", "--", "rm", "-rf", "/tmp"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, Some("rm -rf /tmp".to_string()));
@@ -433,7 +438,7 @@ mod tests {
 
     #[test]
     fn test_kubectl_get_not_wrapper() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("kubectl", &["get", "pods"]);
         let result = unwrap_command(&cmd, &config);
         assert!(result.is_none());
@@ -441,7 +446,7 @@ mod tests {
 
     #[test]
     fn test_kubectl_exec_no_separator() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("kubectl", &["exec", "mypod"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, None);
@@ -449,7 +454,7 @@ mod tests {
 
     #[test]
     fn test_timeout_simple() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("timeout", &["30", "ls", "-la"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, Some("ls -la".to_string()));
@@ -457,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_timeout_with_options() {
-        let config = Config::default();
+        let config = test_config();
         let cmd = make_cmd("timeout", &["-k", "10", "30s", "rm", "-rf", "/tmp"]);
         let result = unwrap_command(&cmd, &config).unwrap();
         assert_eq!(result.inner_command, Some("rm -rf /tmp".to_string()));

@@ -384,101 +384,12 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
+        // Minimal default - ask for everything if no config file
         Config {
             default: "ask".to_string(),
-            rules: vec![
-                // Read-only commands
-                Rule {
-                    commands: vec![
-                        "ls".into(), "cat".into(), "head".into(), "tail".into(),
-                        "less".into(), "more".into(), "pwd".into(), "whoami".into(),
-                        "hostname".into(), "uname".into(), "id".into(), "groups".into(),
-                        "ps".into(), "top".into(), "htop".into(), "df".into(),
-                        "du".into(), "free".into(), "uptime".into(), "date".into(),
-                        "grep".into(), "find".into(), "wc".into(), "sort".into(),
-                        "uniq".into(), "which".into(), "whereis".into(), "file".into(),
-                        "sed".into(), "awk".into(), "jq".into(), "yq".into(), "xq".into(),
-                        "cd".into(), "echo".into(), "mkdir".into(), "cp".into(), "mv".into(),
-                    ],
-                    permission: "allow".into(),
-                    reason: "read-only command".into(),
-                    host_rules: vec![],
-                },
-                // Git read-only
-                Rule {
-                    commands: vec![
-                        "git status".into(), "git log".into(), "git diff".into(),
-                        "git branch".into(), "git remote".into(), "git show".into(),
-                        "git rev-parse".into(), "git describe".into(),
-                    ],
-                    permission: "allow".into(),
-                    reason: "git read-only".into(),
-                    host_rules: vec![],
-                },
-                // Kubectl read-only
-                Rule {
-                    commands: vec![
-                        "kubectl get".into(), "kubectl describe".into(),
-                        "kubectl logs".into(), "kubectl explain".into(),
-                    ],
-                    permission: "allow".into(),
-                    reason: "kubectl read-only".into(),
-                    host_rules: vec![],
-                },
-                // Destructive commands - deny
-                Rule {
-                    commands: vec![
-                        "rm -rf".into(), "rm -r".into(), "rm --recursive".into(),
-                    ],
-                    permission: "deny".into(),
-                    reason: "recursive delete".into(),
-                    host_rules: vec![],
-                },
-                Rule {
-                    commands: vec![
-                        "mkfs".into(), "dd".into(), "fdisk".into(), "parted".into(),
-                    ],
-                    permission: "deny".into(),
-                    reason: "disk operations".into(),
-                    host_rules: vec![],
-                },
-            ],
-            wrappers: vec![
-                WrapperConfig {
-                    command: "sudo".into(),
-                    opts_with_args: vec![
-                        "-g".into(), "-p".into(), "-r".into(), "-t".into(),
-                        "-u".into(), "-T".into(), "-C".into(), "-h".into(), "-U".into(),
-                    ],
-                },
-                WrapperConfig {
-                    command: "nice".into(),
-                    opts_with_args: vec!["-n".into()],
-                },
-                WrapperConfig {
-                    command: "nohup".into(),
-                    opts_with_args: vec![],
-                },
-                WrapperConfig {
-                    command: "time".into(),
-                    opts_with_args: vec!["-o".into(), "-f".into()],
-                },
-                WrapperConfig {
-                    command: "strace".into(),
-                    opts_with_args: vec!["-e".into(), "-o".into(), "-p".into(), "-s".into(), "-u".into()],
-                },
-                WrapperConfig {
-                    command: "ltrace".into(),
-                    opts_with_args: vec!["-e".into(), "-o".into(), "-p".into(), "-s".into(), "-u".into(), "-n".into()],
-                },
-            ],
-            suggestions: vec![
-                Suggestion {
-                    command: "git checkout".into(),
-                    message: "Consider using 'git switch' or 'git restore' instead".into(),
-                    pattern: None,
-                },
-            ],
+            rules: vec![],
+            wrappers: vec![],
+            suggestions: vec![],
         }
     }
 }
@@ -486,31 +397,36 @@ impl Default for Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    fn test_config() -> Config {
+        Config::load(Path::new("config.example.toml")).expect("Failed to load test config")
+    }
 
     #[test]
     fn test_simple_match() {
-        let config = Config::default();
+        let config = test_config();
         let result = config.check_command("ls", &["-la".into()]);
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_subcommand_match() {
-        let config = Config::default();
+        let config = test_config();
         let result = config.check_command("git", &["status".into()]);
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_flag_match() {
-        let config = Config::default();
+        let config = test_config();
         let result = config.check_command("rm", &["-rf".into(), "/tmp/foo".into()]);
         assert_eq!(result.permission, Permission::Deny);
     }
 
     #[test]
     fn test_combined_flags() {
-        let config = Config::default();
+        let config = test_config();
         // rm -rf should match "rm -r" rule
         let result = config.check_command("rm", &["-rf".into(), "/tmp".into()]);
         assert_eq!(result.permission, Permission::Deny);
@@ -518,7 +434,7 @@ mod tests {
 
     #[test]
     fn test_suggestion() {
-        let config = Config::default();
+        let config = test_config();
         let result = config.check_command("git", &["checkout".into(), "main".into()]);
         assert!(result.suggestion.is_some());
         assert!(result.suggestion.unwrap().contains("git switch"));
@@ -526,14 +442,14 @@ mod tests {
 
     #[test]
     fn test_unknown_command() {
-        let config = Config::default();
+        let config = test_config();
         let result = config.check_command("unknown_cmd", &[]);
         assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_git_with_path_flag() {
-        let config = Config::default();
+        let config = test_config();
         // git -C path describe should match "git describe" rule
         let result = config.check_command(
             "git",
@@ -544,12 +460,19 @@ mod tests {
 
     #[test]
     fn test_kubectl_with_namespace() {
-        let config = Config::default();
+        let config = test_config();
         // kubectl -n namespace get pods should match "kubectl get"
         let result = config.check_command(
             "kubectl",
             &["-n".into(), "prod".into(), "get".into(), "pods".into()],
         );
         assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_default_config_asks() {
+        let config = Config::default();
+        let result = config.check_command("ls", &[]);
+        assert_eq!(result.permission, Permission::Ask);
     }
 }
