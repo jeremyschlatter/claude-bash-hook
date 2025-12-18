@@ -14,6 +14,7 @@ commands = [
     "pwd", "whoami", "hostname", "uname", "id", "groups",
     "ps", "top", "htop", "df", "du", "free", "uptime", "date",
     "grep", "find", "wc", "sort", "uniq", "which", "whereis", "file",
+    "jq", "yq", "xq",
 ]
 permission = "allow"
 reason = "read-only commands"
