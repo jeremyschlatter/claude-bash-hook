@@ -397,6 +397,8 @@ impl Default for Config {
                         "du".into(), "free".into(), "uptime".into(), "date".into(),
                         "grep".into(), "find".into(), "wc".into(), "sort".into(),
                         "uniq".into(), "which".into(), "whereis".into(), "file".into(),
+                        "sed".into(), "awk".into(), "jq".into(), "yq".into(), "xq".into(),
+                        "cd".into(), "echo".into(), "mkdir".into(), "cp".into(), "mv".into(),
                     ],
                     permission: "allow".into(),
                     reason: "read-only command".into(),

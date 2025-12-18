@@ -16,6 +16,7 @@ commands = [
     "grep", "find", "wc", "sort", "uniq", "which", "whereis", "file",
     "jq", "yq", "xq",
     "cd", "echo", "mkdir", "cp", "mv",
+    "sed", "awk",  # sed -i requires edit mode
 ]
 permission = "allow"
 reason = "read-only commands"
