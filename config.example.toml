@@ -15,6 +15,7 @@ commands = [
     "ps", "top", "htop", "df", "du", "free", "uptime", "date",
     "grep", "find", "wc", "sort", "uniq", "which", "whereis", "file",
     "jq", "yq", "xq",
+    "cd", "echo", "mkdir", "cp", "mv",
 ]
 permission = "allow"
 reason = "read-only commands"
