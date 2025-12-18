@@ -23,6 +23,12 @@ pub fn check_sql_query(cmd: &Command) -> Option<PermissionResult> {
     }
 
     let query = query?;
+    // Strip surrounding quotes if present
+    let query = query.trim();
+    let query = query.strip_prefix('"').unwrap_or(query);
+    let query = query.strip_suffix('"').unwrap_or(query);
+    let query = query.strip_prefix('\'').unwrap_or(query);
+    let query = query.strip_suffix('\'').unwrap_or(query);
     let trimmed = query.trim().to_uppercase();
 
     // Read-only SQL statements
@@ -61,6 +67,14 @@ mod tests {
     #[test]
     fn test_select_allowed() {
         let cmd = make_cmd("mysql", &["-u", "root", "-e", "SELECT * FROM users"]);
+        let result = check_sql_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_select_with_quotes_allowed() {
+        // Tree-sitter includes quotes in string arguments
+        let cmd = make_cmd("mysql", &["-e", "\"SELECT * FROM users\""]);
         let result = check_sql_query(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
