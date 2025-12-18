@@ -11,7 +11,8 @@ pub struct Command {
     pub name: String,
     /// All arguments including flags (e.g., ["-la", "/tmp"])
     pub args: Vec<String>,
-    /// The full command text
+    /// The full command text (for debugging)
+    #[allow(dead_code)]
     pub text: String,
 }
 
@@ -118,7 +119,6 @@ fn extract_command(node: Node, source: &[u8]) -> Option<Command> {
     }
 
     // Also check for arguments using field iteration
-    let mut cursor2 = node.walk();
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
             if let Some(field) = node.field_name_for_child(i as u32) {
@@ -128,7 +128,6 @@ fn extract_command(node: Node, source: &[u8]) -> Option<Command> {
             }
         }
     }
-    drop(cursor2);
 
     if name.is_empty() {
         return None;

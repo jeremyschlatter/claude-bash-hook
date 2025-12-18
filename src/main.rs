@@ -5,7 +5,7 @@
 mod analyzer;
 mod config;
 mod sql;
-mod wrapper;
+mod wrappers;
 
 use config::{Config, Permission, PermissionResult};
 use serde::{Deserialize, Serialize};
@@ -143,7 +143,7 @@ fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> Permissio
 /// Check a single command, handling wrappers recursively
 fn check_single_command(cmd: &analyzer::Command, config: &Config, edit_mode: bool) -> PermissionResult {
     // Check if this is a wrapper command
-    if let Some(unwrap_result) = wrapper::unwrap_command(cmd, config) {
+    if let Some(unwrap_result) = wrappers::unwrap_command(cmd, config) {
         // If there's an inner command, recursively analyze it
         if let Some(ref inner) = unwrap_result.inner_command {
             let inner_result = analyze_command(inner, config, edit_mode);
