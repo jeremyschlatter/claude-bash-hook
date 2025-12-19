@@ -29,25 +29,33 @@ pub fn check_sql_query(cmd: &Command) -> Option<PermissionResult> {
     let query = query.strip_suffix('"').unwrap_or(query);
     let query = query.strip_prefix('\'').unwrap_or(query);
     let query = query.strip_suffix('\'').unwrap_or(query);
-    let trimmed = query.trim().to_uppercase();
 
     // Read-only SQL statements
     let read_only_prefixes = [
         "SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "USE",
     ];
 
-    if read_only_prefixes.iter().any(|p| trimmed.starts_with(p)) {
-        return Some(PermissionResult {
-            permission: Permission::Allow,
-            reason: "read-only SQL query".to_string(),
-            suggestion: None,
-        });
+    // Split by semicolons and check ALL statements
+    // If any statement is not read-only, ask for permission
+    for statement in query.split(';') {
+        let trimmed = statement.trim().to_uppercase();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !read_only_prefixes.iter().any(|p| trimmed.starts_with(p)) {
+            // Found a non-read-only statement
+            return Some(PermissionResult {
+                permission: Permission::Ask,
+                reason: "SQL write operation".to_string(),
+                suggestion: None,
+            });
+        }
     }
 
-    // Write operation - ask
+    // All statements are read-only
     Some(PermissionResult {
-        permission: Permission::Ask,
-        reason: "SQL write operation".to_string(),
+        permission: Permission::Allow,
+        reason: "read-only SQL query".to_string(),
         suggestion: None,
     })
 }
@@ -131,6 +139,22 @@ mod tests {
     #[test]
     fn test_execute_equals_form() {
         let cmd = make_cmd("mysql", &["--execute=SHOW TABLES"]);
+        let result = check_sql_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_multi_statement_bypass_blocked() {
+        // SELECT followed by DROP should NOT be allowed
+        let cmd = make_cmd("mysql", &["-e", "SELECT 1; DROP TABLE users;"]);
+        let result = check_sql_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Ask);
+    }
+
+    #[test]
+    fn test_multi_statement_all_readonly() {
+        // Multiple read-only statements should be allowed
+        let cmd = make_cmd("mysql", &["-e", "SELECT 1; SHOW TABLES; DESCRIBE users;"]);
         let result = check_sql_query(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }

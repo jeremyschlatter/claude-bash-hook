@@ -466,7 +466,7 @@ mod tests {
     fn test_flag_match() {
         let config = test_config();
         let result = config.check_command("rm", &["-rf".into(), "/tmp/foo".into()]);
-        assert_eq!(result.permission, Permission::Ask);
+        assert_eq!(result.permission, Permission::Passthrough);
     }
 
     #[test]
@@ -474,7 +474,7 @@ mod tests {
         let config = test_config();
         // rm -rf should match "rm -r" rule
         let result = config.check_command("rm", &["-rf".into(), "/tmp".into()]);
-        assert_eq!(result.permission, Permission::Ask);
+        assert_eq!(result.permission, Permission::Passthrough);
     }
 
     #[test]

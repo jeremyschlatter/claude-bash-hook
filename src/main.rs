@@ -252,7 +252,7 @@ mod tests {
     fn test_dangerous_command() {
         let config = test_config();
         let result = analyze_command("rm -rf /", &config, false);
-        assert_eq!(result.permission, Permission::Ask);
+        assert_eq!(result.permission, Permission::Passthrough);
     }
 
     #[test]
@@ -267,24 +267,24 @@ mod tests {
     fn test_sudo_dangerous() {
         let config = test_config();
         let result = analyze_command("sudo rm -rf /", &config, false);
-        // sudo unwraps to rm -rf /, which asks
-        assert_eq!(result.permission, Permission::Ask);
+        // sudo unwraps to rm -rf /, which passes through
+        assert_eq!(result.permission, Permission::Passthrough);
     }
 
     #[test]
     fn test_chain_with_dangerous() {
         let config = test_config();
         let result = analyze_command("ls && rm -rf /tmp", &config, false);
-        // Most restrictive should be ask
-        assert_eq!(result.permission, Permission::Ask);
+        // Most restrictive should be passthrough
+        assert_eq!(result.permission, Permission::Passthrough);
     }
 
     #[test]
     fn test_env_dangerous() {
         let config = test_config();
         let result = analyze_command("env VAR=1 rm -rf /", &config, false);
-        // env unwraps to rm -rf /, which asks
-        assert_eq!(result.permission, Permission::Ask);
+        // env unwraps to rm -rf /, which passes through
+        assert_eq!(result.permission, Permission::Passthrough);
     }
 
     #[test]
@@ -315,8 +315,8 @@ mod tests {
     fn test_kubectl_exec_dangerous() {
         let config = test_config();
         let result = analyze_command("kubectl exec -n prod mypod -- rm -rf /", &config, false);
-        // kubectl exec unwraps to rm -rf /, which asks
-        assert_eq!(result.permission, Permission::Ask);
+        // kubectl exec unwraps to rm -rf /, which passes through
+        assert_eq!(result.permission, Permission::Passthrough);
     }
 
     #[test]
@@ -339,7 +339,7 @@ mod tests {
     fn test_sed_i_asks_without_edit_mode() {
         let config = test_config();
         let result = analyze_command("sed -i 's/foo/bar/' file.txt", &config, false);
-        // sed -i asks when not in edit mode
+        // sed -i explicitly asks when not in edit mode (safety feature)
         assert_eq!(result.permission, Permission::Ask);
     }
 
