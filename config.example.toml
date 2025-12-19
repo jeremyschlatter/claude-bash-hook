@@ -207,7 +207,7 @@ reason = "terraform read-only"
 
 # cargo dev commands
 [[rules]]
-commands = ["cargo check", "cargo build", "cargo test", "cargo run", "cargo doc", "cargo search", "cargo tree", "cargo metadata", "cargo fmt", "cargo clippy"]
+commands = ["cargo check", "cargo build", "cargo test", "cargo run", "cargo doc", "cargo search", "cargo tree", "cargo metadata", "cargo fmt", "cargo clippy", "cargo new"]
 permission = "allow"
 reason = "cargo dev commands"
 
