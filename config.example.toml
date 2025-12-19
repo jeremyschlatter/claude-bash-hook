@@ -267,7 +267,6 @@ commands = ["ssh", "scp", "rsync"]
 permission = "check_host"
 reason = "remote connection"
 host_rules = [
-    { pattern = "dev-*", permission = "allow" },
     { pattern = "*", permission = "allow" },
 ]
 
