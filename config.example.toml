@@ -268,8 +268,6 @@ permission = "check_host"
 reason = "remote connection"
 host_rules = [
     { pattern = "dev-*", permission = "allow" },
-    { pattern = "staging-*", permission = "passthrough" },
-    { pattern = "prod-*", permission = "passthrough" },
     { pattern = "*", permission = "allow" },
 ]
 
