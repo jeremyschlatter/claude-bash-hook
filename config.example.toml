@@ -97,7 +97,7 @@ reason = "sentry read-only"
 
 # jira read-only
 [[rules]]
-commands = ["jira issue view", "jira issue list", "jira project list", "jira sprint list", "jira board list"]
+commands = ["jira issue view", "jira issue list", "jira project list", "jira sprint list", "jira board list", "jira issue create --help"]
 permission = "allow"
 reason = "jira read-only"
 
