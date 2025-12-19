@@ -207,7 +207,7 @@ reason = "terraform read-only"
 
 # gmail read-only
 [[rules]]
-commands = ["gmail list"]
+commands = ["gmail list", "gmail labels"]
 permission = "allow"
 reason = "gmail read-only"
 
