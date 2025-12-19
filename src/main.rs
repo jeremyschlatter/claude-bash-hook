@@ -4,6 +4,7 @@
 
 mod analyzer;
 mod config;
+mod git;
 mod sql;
 mod wrappers;
 
@@ -193,6 +194,13 @@ fn check_single_command(cmd: &analyzer::Command, config: &Config, edit_mode: boo
     // Special handling for mysql/mariadb - allow read-only queries
     if cmd.name == "mysql" || cmd.name == "mariadb" {
         if let Some(result) = sql::check_sql_query(cmd) {
+            return result;
+        }
+    }
+
+    // Special handling for git push - check target branch
+    if cmd.name == "git" && cmd.args.first().map(|s| s.as_str()) == Some("push") {
+        if let Some(result) = git::check_git_push(cmd) {
             return result;
         }
     }

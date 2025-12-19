@@ -47,7 +47,7 @@ commands = ["git switch -f", "git switch --force"]
 permission = "passthrough"
 reason = "force switch can discard changes"
 
-# Git switch/restore without force - allow
+# Git safe operations (git push handled specially in code)
 [[rules]]
 commands = ["git switch", "git restore", "git pull", "git add", "git rm", "git fetch", "git commit", "git init"]
 permission = "allow"
