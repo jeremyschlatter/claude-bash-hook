@@ -44,7 +44,7 @@ reason = "git read-only"
 # Git switch with force flag - ask
 [[rules]]
 commands = ["git switch -f", "git switch --force"]
-permission = "ask"
+permission = "passthrough"
 reason = "force switch can discard changes"
 
 # Git switch/restore without force - allow
@@ -66,7 +66,7 @@ reason = "docker read-only and safe operations"
 # Docker destructive - ask
 [[rules]]
 commands = ["docker rm", "docker rmi", "docker system prune"]
-permission = "ask"
+permission = "passthrough"
 reason = "docker destructive"
 
 # Kubectl read-only and safe operations
@@ -246,13 +246,13 @@ reason = "doctl read-only"
 # Recursive delete - ask
 [[rules]]
 commands = ["rm -rf", "rm -r", "rm --recursive"]
-permission = "ask"
+permission = "passthrough"
 reason = "recursive delete"
 
 # Single file delete - ask
 [[rules]]
 commands = ["rm"]
-permission = "ask"
+permission = "passthrough"
 reason = "file deletion"
 
 # Disk operations - deny
@@ -268,8 +268,8 @@ permission = "check_host"
 reason = "remote connection"
 host_rules = [
     { pattern = "dev-*", permission = "allow" },
-    { pattern = "staging-*", permission = "ask" },
-    { pattern = "prod-*", permission = "ask" },
+    { pattern = "staging-*", permission = "passthrough" },
+    { pattern = "prod-*", permission = "passthrough" },
     { pattern = "*", permission = "allow" },
 ]
 

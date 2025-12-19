@@ -8,8 +8,9 @@ use std::path::Path;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Permission {
     Allow = 0,
-    Ask = 1,
-    Deny = 2,
+    Passthrough = 1,
+    Ask = 2,
+    Deny = 3,
 }
 
 impl Default for Permission {
@@ -419,8 +420,9 @@ impl Config {
     fn parse_permission(&self, s: &str) -> Permission {
         match s.to_lowercase().as_str() {
             "allow" => Permission::Allow,
+            "ask" => Permission::Ask,
             "deny" => Permission::Deny,
-            _ => Permission::Ask,
+            _ => Permission::Passthrough,
         }
     }
 }
@@ -487,7 +489,7 @@ mod tests {
     fn test_unknown_command() {
         let config = test_config();
         let result = config.check_command("unknown_cmd", &[]);
-        assert_eq!(result.permission, Permission::Ask);
+        assert_eq!(result.permission, Permission::Passthrough);
     }
 
     #[test]
