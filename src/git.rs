@@ -7,6 +7,33 @@ use std::process::Command as ProcessCommand;
 /// Protected branch names
 const PROTECTED_BRANCHES: &[&str] = &["master", "main"];
 
+/// Check if a git checkout should be allowed
+pub fn check_git_checkout(cmd: &Command) -> Option<PermissionResult> {
+    // Only handle git checkout
+    if cmd.name != "git" || cmd.args.first().map(|s| s.as_str()) != Some("checkout") {
+        return None;
+    }
+
+    let args: Vec<&str> = cmd.args.iter().skip(1).map(|s| s.as_str()).collect();
+
+    // git checkout -b <branch> - creating a branch is safe
+    if args.iter().any(|a| *a == "-b" || *a == "-B" || *a == "--branch") {
+        return Some(PermissionResult {
+            permission: Permission::Allow,
+            reason: "create branch".to_string(),
+            suggestion: None,
+        });
+    }
+
+    // git checkout -- <file> or git checkout <file> - could discard changes, ask
+    // git checkout <branch> - switching branches, also ask (suggest git switch)
+    Some(PermissionResult {
+        permission: Permission::Ask,
+        reason: "checkout can discard changes".to_string(),
+        suggestion: Some("Consider using 'git switch <branch>' or 'git restore <file>' instead".to_string()),
+    })
+}
+
 /// Check if a git push should be allowed
 pub fn check_git_push(cmd: &Command) -> Option<PermissionResult> {
     // Only handle git push
@@ -149,6 +176,44 @@ mod tests {
     fn test_non_push_returns_none() {
         let cmd = make_cmd(&["status"]);
         let result = check_git_push(&cmd);
+        assert!(result.is_none());
+    }
+
+    // Git checkout tests
+
+    #[test]
+    fn test_checkout_create_branch_allows() {
+        let cmd = make_cmd(&["checkout", "-b", "feature-branch"]);
+        let result = check_git_checkout(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_checkout_create_branch_uppercase_allows() {
+        let cmd = make_cmd(&["checkout", "-B", "feature-branch"]);
+        let result = check_git_checkout(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_checkout_branch_asks() {
+        let cmd = make_cmd(&["checkout", "main"]);
+        let result = check_git_checkout(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Ask);
+        assert!(result.suggestion.is_some());
+    }
+
+    #[test]
+    fn test_checkout_file_asks() {
+        let cmd = make_cmd(&["checkout", "--", "file.txt"]);
+        let result = check_git_checkout(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Ask);
+    }
+
+    #[test]
+    fn test_non_checkout_returns_none() {
+        let cmd = make_cmd(&["status"]);
+        let result = check_git_checkout(&cmd);
         assert!(result.is_none());
     }
 }

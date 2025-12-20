@@ -205,6 +205,13 @@ fn check_single_command(cmd: &analyzer::Command, config: &Config, edit_mode: boo
         }
     }
 
+    // Special handling for git checkout - allow -b, ask for others
+    if cmd.name == "git" && cmd.args.first().map(|s| s.as_str()) == Some("checkout") {
+        if let Some(result) = git::check_git_checkout(cmd) {
+            return result;
+        }
+    }
+
     // Regular command - check against rules
     config.check_command(&cmd.name, &cmd.args)
 }
