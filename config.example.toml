@@ -84,7 +84,7 @@ reason = "kubectl read-only and safe operations"
 [[rules]]
 commands = [
     "unifi internet", "unifi devices", "unifi networks", "unifi clients",
-    "unifi wifi", "unifi firewall", "unifi security", "unifi vpn", "unifi config",
+    "unifi wifi", "unifi firewall", "unifi security", "unifi vpn", "unifi config", "unifi dns",
 ]
 permission = "allow"
 reason = "unifi read-only"
