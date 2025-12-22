@@ -3,13 +3,18 @@
 use crate::analyzer::Command;
 use crate::config::{Permission, PermissionResult};
 
-/// Strip surrounding quotes from a query string
-fn strip_quotes(query: &str) -> &str {
+/// Strip surrounding quotes from a query string (including escaped quotes)
+fn strip_quotes(query: &str) -> String {
     let query = query.trim();
+    // Handle escaped quotes first
+    let query = query.strip_prefix("\\\"").unwrap_or(query);
+    let query = query.strip_suffix("\\\"").unwrap_or(query);
+    // Then regular quotes
     let query = query.strip_prefix('"').unwrap_or(query);
     let query = query.strip_suffix('"').unwrap_or(query);
     let query = query.strip_prefix('\'').unwrap_or(query);
-    query.strip_suffix('\'').unwrap_or(query)
+    let query = query.strip_suffix('\'').unwrap_or(query);
+    query.to_string()
 }
 
 /// Check if a SQL query is read-only
@@ -45,15 +50,24 @@ fn check_query_readonly(query: &str) -> PermissionResult {
 }
 
 /// Extract query from mysql/mariadb command
-fn extract_mysql_query(cmd: &Command) -> Option<&str> {
-    let mut iter = cmd.args.iter();
-    while let Some(arg) = iter.next() {
+fn extract_mysql_query(cmd: &Command) -> Option<String> {
+    let mut iter = cmd.args.iter().enumerate();
+    while let Some((idx, arg)) = iter.next() {
         if arg == "-e" || arg == "--execute" {
-            return iter.next().map(|s| s.as_str());
+            // Check if next arg starts with escaped quote - if so, join until closing quote
+            if let Some(next) = cmd.args.get(idx + 1) {
+                if next.starts_with("\\\"") || next.starts_with("\"") {
+                    // Join all args from here until we find one ending with escaped quote
+                    let remaining: Vec<&str> = cmd.args[idx + 1..].iter().map(|s| s.as_str()).collect();
+                    return Some(remaining.join(" "));
+                }
+                return Some(next.clone());
+            }
+            return None;
         } else if arg.starts_with("-e") {
-            return Some(&arg[2..]);
+            return Some(arg[2..].to_string());
         } else if arg.starts_with("--execute=") {
-            return Some(&arg[10..]);
+            return Some(arg[10..].to_string());
         }
     }
     None
@@ -91,13 +105,13 @@ fn extract_sqlite3_query(cmd: &Command) -> Option<&str> {
 /// Check if a mysql/mariadb command has a read-only query
 pub fn check_mysql_query(cmd: &Command) -> Option<PermissionResult> {
     let query = extract_mysql_query(cmd)?;
-    Some(check_query_readonly(strip_quotes(query)))
+    Some(check_query_readonly(&strip_quotes(&query)))
 }
 
 /// Check if a sqlite3 command has a read-only query
 pub fn check_sqlite3_query(cmd: &Command) -> Option<PermissionResult> {
     let query = extract_sqlite3_query(cmd)?;
-    Some(check_query_readonly(strip_quotes(query)))
+    Some(check_query_readonly(&strip_quotes(query)))
 }
 
 #[cfg(test)]
@@ -247,5 +261,14 @@ mod tests {
         let cmd = make_cmd("sqlite3", &["db.sqlite", ".tables"]);
         let result = check_sqlite3_query(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_escaped_quotes() {
+        // Simulating what happens after SSH unwraps: mariadb -e \"SHOW MASTER STATUS\"
+        let cmd = make_cmd("mariadb", &["-e", "\\\"SHOW", "MASTER", "STATUS\\\""]);
+        let result = check_mysql_query(&cmd);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().permission, Permission::Allow);
     }
 }
