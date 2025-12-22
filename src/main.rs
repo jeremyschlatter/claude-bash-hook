@@ -192,7 +192,7 @@ fn check_single_command(cmd: &analyzer::Command, config: &Config, edit_mode: boo
     }
 
     // Special handling for mysql/mariadb - allow read-only queries
-    if cmd.name == "mysql" || cmd.name == "mariadb" {
+    if matches!(cmd.name.as_str(), "mysql" | "mariadb" | "mysql-prod" | "mysql-prod-root" | "mysql-external" | "mysql-replication") {
         if let Some(result) = sql::check_mysql_query(cmd) {
             return result;
         }
