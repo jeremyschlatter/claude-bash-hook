@@ -6,6 +6,7 @@ mod analyzer;
 mod config;
 mod docker;
 mod git;
+mod rm;
 mod sql;
 mod wrappers;
 
@@ -223,6 +224,13 @@ fn check_single_command(cmd: &analyzer::Command, config: &Config, edit_mode: boo
     // Special handling for docker run - allow if no rw bind mounts
     if cmd.name == "docker" && cmd.args.first().map(|s| s.as_str()) == Some("run") {
         if let Some(result) = docker::check_docker_run(cmd) {
+            return result;
+        }
+    }
+
+    // Special handling for rm - allow deletion under /tmp/
+    if cmd.name == "rm" {
+        if let Some(result) = rm::check_rm(cmd) {
             return result;
         }
     }
