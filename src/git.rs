@@ -41,29 +41,37 @@ pub fn check_git_push(cmd: &Command) -> Option<PermissionResult> {
         return None;
     }
 
-    // Check for force push flags
-    if cmd.args.iter().any(|a| a == "-f" || a == "--force" || a == "--force-with-lease") {
+    // Check for dangerous force push (not --force-with-lease which is safer)
+    let has_dangerous_force = cmd.args.iter().any(|a| a == "-f" || a == "--force");
+    let has_force_with_lease = cmd.args.iter().any(|a| a == "--force-with-lease");
+
+    if has_dangerous_force {
         return Some(PermissionResult {
             permission: Permission::Ask,
             reason: "force push".to_string(),
-            suggestion: None,
+            suggestion: Some("Consider using --force-with-lease for safer force push".to_string()),
         });
     }
 
     // Try to determine the target branch
     let target_branch = get_push_target_branch(cmd);
 
-    if let Some(branch) = target_branch {
+    if let Some(branch) = &target_branch {
         if PROTECTED_BRANCHES.contains(&branch.as_str()) {
+            let reason = if has_force_with_lease {
+                format!("force push to protected branch '{}'", branch)
+            } else {
+                format!("push to protected branch '{}'", branch)
+            };
             return Some(PermissionResult {
                 permission: Permission::Ask,
-                reason: format!("push to protected branch '{}'", branch),
+                reason,
                 suggestion: None,
             });
         }
     }
 
-    // Allow push to non-protected branches
+    // Allow push (including --force-with-lease) to non-protected branches
     Some(PermissionResult {
         permission: Permission::Allow,
         reason: "git push".to_string(),
@@ -140,6 +148,21 @@ mod tests {
     #[test]
     fn test_force_push_asks() {
         let cmd = make_cmd(&["push", "-f"]);
+        let result = check_git_push(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Ask);
+        assert!(result.suggestion.is_some()); // suggests --force-with-lease
+    }
+
+    #[test]
+    fn test_force_with_lease_to_feature_allows() {
+        let cmd = make_cmd(&["push", "--force-with-lease", "origin", "feature-branch"]);
+        let result = check_git_push(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_force_with_lease_to_main_asks() {
+        let cmd = make_cmd(&["push", "--force-with-lease", "origin", "main"]);
         let result = check_git_push(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
