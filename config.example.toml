@@ -20,6 +20,7 @@ commands = [
     "sed", "awk",  # sed -i requires edit mode
     "lsblk", "ldd", "lspci", "lscpu", "lsusb", "strings", "lsof",
     "sleep", "ping", "dig", "journalctl", "pgrep", "stat", "apt-cache", "tree", "printenv", "env", "claude-bash-hook", "ss", "mysqlbinlog",
+    "curl -s https://ifconfig.me",
     "quickshell ipc query",
     "php -l", "dpkg -l",
     "openssl s_client -connect", "openssl x509 -noout -text", "openssl x509 -noout -dates",
@@ -146,7 +147,7 @@ reason = "xdg-mime read-only"
 # ip read-only (show/list only)
 [[rules]]
 commands = [
-    "ip addr show", "ip address show", "ip link show", "ip route show",
+    "ip addr show", "ip address show", "ip link show", "ip route show", "ip route get",
     "ip neigh show", "ip rule show", "ip netns list",
 ]
 permission = "allow"
@@ -254,7 +255,8 @@ commands = [
     "doctl compute droplet list", "doctl compute droplet get",
     "doctl compute image list", "doctl compute region list", "doctl compute size list",
     "doctl compute ssh-key list", "doctl compute volume list",
-    "doctl kubernetes cluster list", "doctl kubernetes cluster get",
+    "doctl kubernetes cluster list", "doctl kubernetes cluster get", "doctl kubernetes cluster --help",
+    "doctl kubernetes --help",
     "doctl databases list", "doctl databases get",
     "doctl vpcs list", "doctl vpcs get",
 ]
