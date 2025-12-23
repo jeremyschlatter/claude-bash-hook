@@ -14,7 +14,7 @@ commands = [
     "ls", "cat", "head", "tail", "less", "more",
     "pwd", "whoami", "hostname", "uname", "id", "groups",
     "ps", "top", "htop", "df", "du", "free", "uptime", "date",
-    "grep", "find", "locate", "wc", "sort", "uniq", "which", "whereis", "file", "tr", "base64", "xxd", "od", "zcat", "gzip", "gunzip", "comm",
+    "grep", "find", "locate", "wc", "diff", "sort", "uniq", "which", "whereis", "file", "tr", "base64", "xxd", "od", "zcat", "gzip", "gunzip", "comm", "command -v",
     "jq", "yq", "xq",
     "cd", "echo", "mkdir", "cp", "mv", "chmod", "ln", "rmdir", "yes",
     "sed", "awk",  # sed -i requires edit mode
@@ -24,7 +24,7 @@ commands = [
     "quickshell ipc query",
     "php -l", "dpkg -l",
     "openssl s_client -connect", "openssl x509 -noout -text", "openssl x509 -noout -dates",
-    "flatpak list", "npm run typecheck", "composer",
+    "flatpak list", "npm run typecheck", "composer", "composer install",
     "mago lint", "mago config",
 ]
 permission = "allow"
