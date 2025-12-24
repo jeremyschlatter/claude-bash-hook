@@ -135,12 +135,22 @@ fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> Permissio
         };
     }
 
+    // Track virtual cwd through command chain (for cd /tmp/claude && tar -xf ...)
+    let mut virtual_cwd: Option<String> = None;
+
     // Check each command and return the most restrictive result
     let mut most_restrictive = PermissionResult::default();
     most_restrictive.permission = Permission::Allow;
 
     for cmd in &analysis.commands {
-        let result = check_single_command(cmd, config, edit_mode);
+        // Track cd commands to update virtual cwd
+        if cmd.name == "cd" {
+            if let Some(dir) = cmd.args.first() {
+                virtual_cwd = Some(dir.clone());
+            }
+        }
+
+        let result = check_single_command(cmd, config, edit_mode, virtual_cwd.as_deref());
 
         if result.permission > most_restrictive.permission {
             most_restrictive = result;
@@ -151,7 +161,12 @@ fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> Permissio
 }
 
 /// Check a single command, handling wrappers recursively
-fn check_single_command(cmd: &analyzer::Command, config: &Config, edit_mode: bool) -> PermissionResult {
+fn check_single_command(
+    cmd: &analyzer::Command,
+    config: &Config,
+    edit_mode: bool,
+    virtual_cwd: Option<&str>,
+) -> PermissionResult {
     // Check if this is a wrapper command
     if let Some(unwrap_result) = wrappers::unwrap_command(cmd, config) {
         // If there's an inner command, recursively analyze it
@@ -238,7 +253,7 @@ fn check_single_command(cmd: &analyzer::Command, config: &Config, edit_mode: boo
 
     // Special handling for tar - allow extraction to /tmp/claude/
     if cmd.name == "tar" {
-        if let Some(result) = tar::check_tar(cmd) {
+        if let Some(result) = tar::check_tar(cmd, virtual_cwd) {
             return result;
         }
     }
