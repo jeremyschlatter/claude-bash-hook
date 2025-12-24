@@ -136,6 +136,14 @@ fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> Permissio
     }
 
     // Track virtual cwd through command chain (for cd /tmp/claude && tar -xf ...)
+    // Only trust virtual_cwd if control flow is predictable (no conditionals)
+    let has_uncertain_flow = command.contains(" || ")
+        || command.contains("if ")
+        || command.contains("case ")
+        || command.contains("while ")
+        || command.contains("for ")
+        || command.contains("until ");
+
     let mut virtual_cwd: Option<String> = None;
 
     // Check each command and return the most restrictive result
@@ -143,8 +151,8 @@ fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> Permissio
     most_restrictive.permission = Permission::Allow;
 
     for cmd in &analysis.commands {
-        // Track cd commands to update virtual cwd
-        if cmd.name == "cd" {
+        // Track cd commands to update virtual cwd (only if flow is predictable)
+        if !has_uncertain_flow && cmd.name == "cd" {
             if let Some(dir) = cmd.args.first() {
                 virtual_cwd = Some(dir.clone());
             }
