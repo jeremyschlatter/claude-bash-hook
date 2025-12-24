@@ -9,10 +9,27 @@ use std::process::Command as ProcessCommand;
 const SAFE_PREFIX: &str = "/tmp/claude/";
 
 /// Check if a tar command should be auto-allowed
-/// Allows extraction to /tmp/claude/ subdirectories
+/// Allows:
+/// - List mode (tar -t) - read-only
+/// - Extraction to /tmp/claude/ subdirectories
 pub fn check_tar(cmd: &Command) -> Option<PermissionResult> {
     if cmd.name != "tar" {
         return None;
+    }
+
+    // Check if this is a list operation (read-only, always allow)
+    let is_list = cmd.args.iter().any(|a| {
+        a == "-t" || a == "-tf" || a == "-tzf" || a == "-tjf" || a == "-tJf"
+            || a.starts_with("-t")
+            || (a.starts_with('-') && a.contains('t') && !a.contains('x'))
+    });
+
+    if is_list {
+        return Some(PermissionResult {
+            permission: Permission::Allow,
+            reason: "tar list (read-only)".to_string(),
+            suggestion: None,
+        });
     }
 
     // Check if this is an extract operation
@@ -177,9 +194,16 @@ mod tests {
     }
 
     #[test]
-    fn test_tar_list_not_handled() {
+    fn test_tar_list_allowed() {
         let cmd = make_cmd(&["-tf", "file.tar"]);
-        let result = check_tar(&cmd);
-        assert!(result.is_none());
+        let result = check_tar(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_tar_list_verbose_allowed() {
+        let cmd = make_cmd(&["-tvf", "file.tar"]);
+        let result = check_tar(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
     }
 }
