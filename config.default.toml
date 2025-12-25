@@ -296,6 +296,10 @@ command = "sudo"
 opts_with_args = ["-g", "-p", "-r", "-t", "-u", "-T", "-C", "-h", "-U"]
 
 [[wrappers]]
+command = "authsudo"
+opts_with_args = ["-u", "--user"]
+
+[[wrappers]]
 command = "nice"
 opts_with_args = ["-n"]
 
