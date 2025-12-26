@@ -12,7 +12,7 @@ default = "passthrough"
 # Read-only commands - always allow
 [[rules]]
 commands = [
-    "ls", "cat", "head", "tail", "less", "more",
+    "ls", "cat", "head", "tail", "less", "more", "man",
     "pwd", "whoami", "hostname", "uname", "id", "groups",
     "ps", "top", "htop", "df", "du", "free", "uptime", "date",
     "grep", "find", "locate", "wc", "diff", "sort", "uniq", "shuf", "which", "whereis", "file", "tr", "cut", "basename", "dirname", "readlink", "base64", "xxd", "od", "zcat", "gzip", "gunzip", "comm", "command -v",
