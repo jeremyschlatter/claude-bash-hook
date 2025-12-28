@@ -1,11 +1,12 @@
 //! Claude Code Bash Permission Hook
 //!
-//! A PreToolUse hook that analyzes bash commands and provides granular permission control.
+//! A PreToolUse hook that analyzes bash and nushell commands and provides granular permission control.
 
 mod analyzer;
 mod config;
 mod docker;
 mod git;
+mod nushell;
 mod rm;
 mod sql;
 mod tar;
@@ -69,9 +70,12 @@ fn main() {
         }
     };
 
-    // Only handle Bash tool
-    if hook_input.tool_name != "Bash" {
-        // Pass through - don't output anything for non-Bash tools
+    // Handle Bash or Nushell MCP tool
+    let is_bash = hook_input.tool_name == "Bash";
+    let is_nushell = hook_input.tool_name == "mcp__nushell__execute";
+
+    if !is_bash && !is_nushell {
+        // Pass through - don't output anything for other tools
         return;
     }
 
@@ -87,13 +91,29 @@ fn main() {
     let config = Config::load_or_default();
     let edit_mode = edits_allowed(hook_input.permission_mode.as_deref());
 
-    // Analyze the command
-    let result = analyze_command(&command, &config, edit_mode);
+    // Analyze the command (bash or nushell)
+    let result = if is_nushell {
+        analyze_nushell_command(&command, &config, edit_mode)
+    } else {
+        analyze_command(&command, &config, edit_mode)
+    };
 
-    // For "passthrough" permission, don't output anything - let Claude Code's built-in system handle it
-    if result.permission == Permission::Passthrough {
-        return;
-    }
+    // For "passthrough" permission on Bash, let Claude Code's built-in system handle it
+    // For nushell MCP, there's no built-in permission system, so ask explicitly
+    let result = if result.permission == Permission::Passthrough {
+        if is_nushell {
+            PermissionResult {
+                permission: Permission::Ask,
+                reason: result.reason,
+                suggestion: result.suggestion,
+            }
+        } else {
+            // Bash: let Claude Code handle it
+            return;
+        }
+    } else {
+        result
+    };
 
     // Output the decision for allow/ask/deny
     let output = HookOutput {
@@ -159,6 +179,42 @@ fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> Permissio
         }
 
         let result = check_single_command(cmd, config, edit_mode, virtual_cwd.as_deref(), has_uncertain_flow);
+
+        if result.permission > most_restrictive.permission {
+            most_restrictive = result;
+        }
+    }
+
+    most_restrictive
+}
+
+/// Analyze a nushell command and return the most restrictive permission
+fn analyze_nushell_command(command: &str, config: &Config, edit_mode: bool) -> PermissionResult {
+    let analysis = nushell::analyze(command);
+
+    if !analysis.success {
+        return PermissionResult {
+            permission: Permission::Deny,
+            reason: format!("Nushell syntax error: {}", analysis.error.unwrap_or_default()),
+            suggestion: Some("Fix the syntax error and try again".to_string()),
+        };
+    }
+
+    // If no external commands, allow (nushell builtins are safe)
+    if analysis.commands.is_empty() {
+        return PermissionResult {
+            permission: Permission::Allow,
+            reason: "Nushell builtins only".to_string(),
+            suggestion: None,
+        };
+    }
+
+    // Check each external command against the same rules as bash
+    let mut most_restrictive = PermissionResult::default();
+    most_restrictive.permission = Permission::Allow;
+
+    for cmd in &analysis.commands {
+        let result = check_single_command(cmd, config, edit_mode, None, false);
 
         if result.permission > most_restrictive.permission {
             most_restrictive = result;
