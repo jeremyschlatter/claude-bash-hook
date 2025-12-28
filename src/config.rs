@@ -253,8 +253,11 @@ impl Config {
             return false;
         }
 
-        // First part must match command name
-        if parts[0] != name {
+        // Normalize command name to basename (e.g., /usr/bin/ls -> ls)
+        let cmd_basename = name.rsplit('/').next().unwrap_or(name);
+
+        // First part must match command name (or its basename)
+        if parts[0] != name && parts[0] != cmd_basename {
             return false;
         }
 
@@ -485,5 +488,21 @@ mod tests {
         let config = Config::default();
         let result = config.check_command("unknown_dangerous_cmd", &[]);
         assert_eq!(result.permission, Permission::Passthrough);
+    }
+
+    #[test]
+    fn test_full_path_matches_basename() {
+        let config = test_config();
+        // /usr/bin/ls should match "ls" rule
+        let result = config.check_command("/usr/bin/ls", &["-la".into()]);
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_full_path_with_subcommand() {
+        let config = test_config();
+        // /usr/bin/git status should match "git status" rule
+        let result = config.check_command("/usr/bin/git", &["status".into()]);
+        assert_eq!(result.permission, Permission::Allow);
     }
 }
