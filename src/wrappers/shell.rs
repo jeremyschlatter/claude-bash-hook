@@ -1,12 +1,12 @@
-//! Shell wrapper handling (sh -c, bash -c, zsh -c, nu -c)
+//! Shell wrapper handling (sh -c, bash -c, zsh -c, fish -c, nu -c)
 
 use crate::analyzer::Command;
 use crate::wrappers::UnwrapResult;
 
 /// Check if this is a shell -c command and unwrap it
 pub fn unwrap(cmd: &Command) -> Option<UnwrapResult> {
-    // Only handle sh, bash, zsh, nu with -c flag
-    if !matches!(cmd.name.as_str(), "sh" | "bash" | "zsh" | "nu") {
+    // Only handle sh, bash, zsh, fish, nu with -c flag
+    if !matches!(cmd.name.as_str(), "sh" | "bash" | "zsh" | "fish" | "nu") {
         return None;
     }
 
@@ -104,5 +104,12 @@ mod tests {
         let cmd = make_cmd("nu", &["--commands", "echo hello"]);
         let result = unwrap(&cmd).unwrap();
         assert_eq!(result.inner_command, Some("echo hello".to_string()));
+    }
+
+    #[test]
+    fn test_fish_c_simple() {
+        let cmd = make_cmd("fish", &["-c", "ls -la"]);
+        let result = unwrap(&cmd).unwrap();
+        assert_eq!(result.inner_command, Some("ls -la".to_string()));
     }
 }

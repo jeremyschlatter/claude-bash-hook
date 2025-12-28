@@ -325,6 +325,10 @@ opts_with_args = ["-e", "-o", "-p", "-s", "-u", "-n"]
 command = "nu"
 opts_with_args = ["-c", "--commands"]
 
+[[wrappers]]
+command = "fish"
+opts_with_args = ["-c", "-C", "--init-command"]
+
 # These have special handling (hardcoded) - listed here for documentation:
 # - ssh: extracts host, inner command after host
 # - scp: extracts host from user@host:path
