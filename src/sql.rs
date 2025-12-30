@@ -21,10 +21,26 @@ fn strip_quotes(query: &str) -> String {
 fn check_query_readonly(query: &str) -> PermissionResult {
     // Read-only SQL statements
     let read_only_prefixes = [
-        "SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "USE", "PRAGMA",
+        "SELECT",
+        "SHOW",
+        "DESCRIBE",
+        "DESC",
+        "EXPLAIN",
+        "USE",
+        "PRAGMA",
         // SQLite3 dot commands (read-only)
-        ".SCHEMA", ".TABLES", ".INDICES", ".INDEXES", ".DUMP", ".MODE",
-        ".HEADERS", ".SEPARATOR", ".WIDTH", ".PRINT", ".SHOW", ".DATABASES",
+        ".SCHEMA",
+        ".TABLES",
+        ".INDICES",
+        ".INDEXES",
+        ".DUMP",
+        ".MODE",
+        ".HEADERS",
+        ".SEPARATOR",
+        ".WIDTH",
+        ".PRINT",
+        ".SHOW",
+        ".DATABASES",
     ];
 
     // Split by semicolons and check ALL statements
@@ -58,7 +74,8 @@ fn extract_mysql_query(cmd: &Command) -> Option<String> {
             if let Some(next) = cmd.args.get(idx + 1) {
                 if next.starts_with("\\\"") || next.starts_with("\"") {
                     // Join all args from here until we find one ending with escaped quote
-                    let remaining: Vec<&str> = cmd.args[idx + 1..].iter().map(|s| s.as_str()).collect();
+                    let remaining: Vec<&str> =
+                        cmd.args[idx + 1..].iter().map(|s| s.as_str()).collect();
                     return Some(remaining.join(" "));
                 }
                 return Some(next.clone());
@@ -223,7 +240,10 @@ mod tests {
 
     #[test]
     fn test_sqlite3_select_with_quotes() {
-        let cmd = make_cmd("sqlite3", &["/data/db.sqlite3", "\"SELECT uuid FROM orgs;\""]);
+        let cmd = make_cmd(
+            "sqlite3",
+            &["/data/db.sqlite3", "\"SELECT uuid FROM orgs;\""],
+        );
         let result = check_sqlite3_query(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }

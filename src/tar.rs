@@ -12,14 +12,22 @@ const SAFE_PREFIX: &str = "/tmp/claude/";
 /// Allows:
 /// - List mode (tar -t) - read-only
 /// - Extraction to /tmp/claude/ subdirectories
-pub fn check_tar(cmd: &Command, virtual_cwd: Option<&str>, has_uncertain_flow: bool) -> Option<PermissionResult> {
+pub fn check_tar(
+    cmd: &Command,
+    virtual_cwd: Option<&str>,
+    has_uncertain_flow: bool,
+) -> Option<PermissionResult> {
     if cmd.name != "tar" {
         return None;
     }
 
     // Check if this is a list operation (read-only, always allow)
     let is_list = cmd.args.iter().any(|a| {
-        a == "-t" || a == "-tf" || a == "-tzf" || a == "-tjf" || a == "-tJf"
+        a == "-t"
+            || a == "-tf"
+            || a == "-tzf"
+            || a == "-tjf"
+            || a == "-tJf"
             || a.starts_with("-t")
             || (a.starts_with('-') && a.contains('t') && !a.contains('x'))
     });
@@ -34,9 +42,13 @@ pub fn check_tar(cmd: &Command, virtual_cwd: Option<&str>, has_uncertain_flow: b
 
     // Check if this is an extract operation
     let is_extract = cmd.args.iter().any(|a| {
-        a == "-x" || a == "-xf" || a == "-xzf" || a == "-xjf" || a == "-xJf"
+        a == "-x"
+            || a == "-xf"
+            || a == "-xzf"
+            || a == "-xjf"
+            || a == "-xJf"
             || a.starts_with("-x")
-            || a.contains('x')  // handles combined flags like -xvf
+            || a.contains('x') // handles combined flags like -xvf
     });
 
     if !is_extract {

@@ -48,7 +48,10 @@ fn has_rw_bind_mount(args: &[&str]) -> bool {
         }
 
         // Handle -v=value or --volume=value
-        if let Some(volume) = arg.strip_prefix("-v=").or_else(|| arg.strip_prefix("--volume=")) {
+        if let Some(volume) = arg
+            .strip_prefix("-v=")
+            .or_else(|| arg.strip_prefix("--volume="))
+        {
             if is_rw_bind_mount(volume) {
                 return true;
             }
@@ -179,21 +182,36 @@ mod tests {
 
     #[test]
     fn test_docker_run_mount_bind_rw() {
-        let cmd = make_cmd(&["run", "--mount", "type=bind,source=/src,target=/dst", "ubuntu"]);
+        let cmd = make_cmd(&[
+            "run",
+            "--mount",
+            "type=bind,source=/src,target=/dst",
+            "ubuntu",
+        ]);
         let result = check_docker_run(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Passthrough);
     }
 
     #[test]
     fn test_docker_run_mount_bind_readonly() {
-        let cmd = make_cmd(&["run", "--mount", "type=bind,source=/src,target=/dst,readonly", "ubuntu"]);
+        let cmd = make_cmd(&[
+            "run",
+            "--mount",
+            "type=bind,source=/src,target=/dst,readonly",
+            "ubuntu",
+        ]);
         let result = check_docker_run(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_docker_run_mount_volume() {
-        let cmd = make_cmd(&["run", "--mount", "type=volume,source=myvolume,target=/dst", "ubuntu"]);
+        let cmd = make_cmd(&[
+            "run",
+            "--mount",
+            "type=volume,source=myvolume,target=/dst",
+            "ubuntu",
+        ]);
         let result = check_docker_run(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }

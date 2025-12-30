@@ -34,7 +34,11 @@ pub fn unwrap(cmd: &Command) -> Option<UnwrapResult> {
 
         if !found_host {
             if arg.starts_with('-') {
-                let opt = if arg.len() > 2 { &arg[0..2] } else { arg.as_str() };
+                let opt = if arg.len() > 2 {
+                    &arg[0..2]
+                } else {
+                    arg.as_str()
+                };
                 if opts_with_args.contains(&opt) {
                     if arg.len() == 2 {
                         skip_next = true;
@@ -113,6 +117,9 @@ mod tests {
         let cmd = make_cmd(&["host", "\"systemctl status foo\""]);
         let result = unwrap(&cmd).unwrap();
         assert_eq!(result.host, Some("host".to_string()));
-        assert_eq!(result.inner_command, Some("systemctl status foo".to_string()));
+        assert_eq!(
+            result.inner_command,
+            Some("systemctl status foo".to_string())
+        );
     }
 }

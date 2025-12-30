@@ -20,7 +20,10 @@ pub fn unwrap(cmd: &Command) -> Option<UnwrapResult> {
             continue;
         }
 
-        if matches!(arg.as_str(), "-u" | "--unset" | "-C" | "--chdir" | "-S" | "--split-string") {
+        if matches!(
+            arg.as_str(),
+            "-u" | "--unset" | "-C" | "--chdir" | "-S" | "--split-string"
+        ) {
             skip_next = true;
             continue;
         }

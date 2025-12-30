@@ -95,7 +95,12 @@ fn main() {
 
     // Analyze the command (bash or nushell)
     let result = if is_nushell {
-        analyze_nushell_command(&command, &config, edit_mode, hook_input.tool_input.cwd.as_deref())
+        analyze_nushell_command(
+            &command,
+            &config,
+            edit_mode,
+            hook_input.tool_input.cwd.as_deref(),
+        )
     } else {
         analyze_command(&command, &config, edit_mode)
     };
@@ -194,7 +199,13 @@ fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> Permissio
             }
         }
 
-        let result = check_single_command(cmd, config, edit_mode, virtual_cwd.as_deref(), has_uncertain_flow);
+        let result = check_single_command(
+            cmd,
+            config,
+            edit_mode,
+            virtual_cwd.as_deref(),
+            has_uncertain_flow,
+        );
 
         if result.permission > most_restrictive.permission {
             most_restrictive = result;
@@ -205,13 +216,21 @@ fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> Permissio
 }
 
 /// Analyze a nushell command and return the most restrictive permission
-fn analyze_nushell_command(command: &str, config: &Config, edit_mode: bool, cwd: Option<&str>) -> PermissionResult {
+fn analyze_nushell_command(
+    command: &str,
+    config: &Config,
+    edit_mode: bool,
+    cwd: Option<&str>,
+) -> PermissionResult {
     let analysis = nushell::analyze(command);
 
     if !analysis.success {
         return PermissionResult {
             permission: Permission::Deny,
-            reason: format!("Nushell syntax error: {}", analysis.error.unwrap_or_default()),
+            reason: format!(
+                "Nushell syntax error: {}",
+                analysis.error.unwrap_or_default()
+            ),
             suggestion: Some("Fix the syntax error and try again".to_string()),
         };
     }
@@ -291,7 +310,15 @@ fn check_single_command(
     }
 
     // Special handling for mysql/mariadb - allow read-only queries
-    if matches!(cmd.name.as_str(), "mysql" | "mariadb" | "mysql-prod" | "mysql-prod-root" | "mysql-external" | "mysql-replication") {
+    if matches!(
+        cmd.name.as_str(),
+        "mysql"
+            | "mariadb"
+            | "mysql-prod"
+            | "mysql-prod-root"
+            | "mysql-external"
+            | "mysql-replication"
+    ) {
         if let Some(result) = sql::check_mysql_query(cmd) {
             return result;
         }
@@ -340,14 +367,22 @@ fn check_single_command(
     }
 
     // Special handling for --help and --version - always allow
-    if cmd.args.iter().any(|a| a == "--help" || a == "-h" || a == "help") {
+    if cmd
+        .args
+        .iter()
+        .any(|a| a == "--help" || a == "-h" || a == "help")
+    {
         return PermissionResult {
             permission: Permission::Allow,
             reason: "help request".to_string(),
             suggestion: None,
         };
     }
-    if cmd.args.iter().any(|a| a == "--version" || a == "-V" || a == "version") {
+    if cmd
+        .args
+        .iter()
+        .any(|a| a == "--version" || a == "-V" || a == "version")
+    {
         return PermissionResult {
             permission: Permission::Allow,
             reason: "version check".to_string(),

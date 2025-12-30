@@ -12,8 +12,21 @@ pub fn unwrap(cmd: &Command) -> Option<UnwrapResult> {
 
     // Options that take an argument
     let opts_with_args = [
-        "-I", "--replace", "-n", "--max-args", "-P", "--max-procs", "-L", "--max-lines", "-s",
-        "--max-chars", "-d", "--delimiter", "-a", "--arg-file", "-E",
+        "-I",
+        "--replace",
+        "-n",
+        "--max-args",
+        "-P",
+        "--max-procs",
+        "-L",
+        "--max-lines",
+        "-s",
+        "--max-chars",
+        "-d",
+        "--delimiter",
+        "-a",
+        "--arg-file",
+        "-E",
     ];
 
     for arg in &cmd.args {

@@ -79,11 +79,7 @@ fn find_syntax_error(node: Node, source: &[u8]) -> String {
     if node.is_error() || node.is_missing() {
         let start = node.start_position();
         let context = get_error_context(node, source);
-        return format!(
-            "Syntax error at column {}: {}",
-            start.column + 1,
-            context
-        );
+        return format!("Syntax error at column {}: {}", start.column + 1, context);
     }
 
     // Recurse into children
@@ -115,9 +111,20 @@ fn get_error_context(node: Node, source: &[u8]) -> String {
     let after = String::from_utf8_lossy(&source[end..context_end]);
 
     if node.is_missing() {
-        format!("expected {} near '{}▶◀{}'", node.kind(), before.trim(), after.trim())
+        format!(
+            "expected {} near '{}▶◀{}'",
+            node.kind(),
+            before.trim(),
+            after.trim()
+        )
     } else {
-        format!("unexpected '{}' near '{}▶{}◀{}'", error_text, before.trim(), error_text, after.trim())
+        format!(
+            "unexpected '{}' near '{}▶{}◀{}'",
+            error_text,
+            before.trim(),
+            error_text,
+            after.trim()
+        )
     }
 }
 
@@ -130,9 +137,18 @@ fn walk_node(node: Node, source: &[u8], commands: &mut Vec<Command>) {
             }
         }
         // Recurse into container nodes
-        "program" | "list" | "pipeline" | "compound_statement" | "subshell"
-        | "if_statement" | "while_statement" | "for_statement" | "case_statement"
-        | "redirected_statement" | "negated_command" | "do_group" => {
+        "program"
+        | "list"
+        | "pipeline"
+        | "compound_statement"
+        | "subshell"
+        | "if_statement"
+        | "while_statement"
+        | "for_statement"
+        | "case_statement"
+        | "redirected_statement"
+        | "negated_command"
+        | "do_group" => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 walk_node(child, source, commands);
@@ -154,8 +170,14 @@ fn extract_command(node: Node, source: &[u8]) -> Option<Command> {
             "command_name" => {
                 name = get_text(child, source);
             }
-            "word" | "string" | "raw_string" | "number" | "concatenation"
-            | "simple_expansion" | "expansion" | "command_substitution" => {
+            "word"
+            | "string"
+            | "raw_string"
+            | "number"
+            | "concatenation"
+            | "simple_expansion"
+            | "expansion"
+            | "command_substitution" => {
                 // These are arguments
                 if child.is_named() {
                     // Check if this is actually an argument field

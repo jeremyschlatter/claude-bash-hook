@@ -16,7 +16,10 @@ pub fn unwrap(cmd: &Command) -> Option<UnwrapResult> {
     }
 
     // Check for -c flag (nu also uses --commands)
-    let c_pos = cmd.args.iter().position(|a| a == "-c" || a == "--commands")?;
+    let c_pos = cmd
+        .args
+        .iter()
+        .position(|a| a == "-c" || a == "--commands")?;
 
     // The command string follows -c
     if c_pos + 1 >= cmd.args.len() {

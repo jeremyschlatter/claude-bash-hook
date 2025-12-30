@@ -1,5 +1,9 @@
 # claude-bash-hook
 
+[![CI](https://github.com/Osso/claude-bash-hook/actions/workflows/ci.yml/badge.svg)](https://github.com/Osso/claude-bash-hook/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/Osso/claude-bash-hook)](https://github.com/Osso/claude-bash-hook/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A PreToolUse hook that parses bash commands before execution. Understands wrappers (sudo, kubectl exec, ssh), SQL queries, and subcommands so you can allow `kubectl get` but ask for `kubectl delete`, or let SELECTs through while catching writes.
 
 Beats manually approving every `ls` or blindly allowing everything.
@@ -9,7 +13,7 @@ Beats manually approving every `ls` or blindly allowing everything.
 ### 1. Build
 
 ```bash
-git clone https://github.com/yourusername/claude-bash-hook
+git clone https://github.com/Osso/claude-bash-hook
 cd claude-bash-hook
 cargo build --release
 ```

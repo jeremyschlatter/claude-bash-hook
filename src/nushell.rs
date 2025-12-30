@@ -5,8 +5,8 @@
 //! doesn't have nushell's stdlib loaded and can't distinguish builtins from externals.
 
 use nu_parser::parse;
-use nu_protocol::engine::{EngineState, StateWorkingSet};
 use nu_protocol::Span;
+use nu_protocol::engine::{EngineState, StateWorkingSet};
 
 use crate::analyzer::Command;
 

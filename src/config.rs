@@ -117,8 +117,8 @@ pub struct Suggestion {
 impl Config {
     /// Load configuration from a file
     pub fn load(path: &Path) -> Result<Self, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read config: {}", e))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read config: {}", e))?;
 
         toml::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))
     }
@@ -149,13 +149,20 @@ impl Config {
     }
 
     /// Check a command against rules with an optional cwd override
-    pub fn check_command_with_cwd(&self, name: &str, args: &[String], cwd: Option<&str>) -> PermissionResult {
+    pub fn check_command_with_cwd(
+        &self,
+        name: &str,
+        args: &[String],
+        cwd: Option<&str>,
+    ) -> PermissionResult {
         // First check for suggestions
         let suggestion = self.find_suggestion(name, args);
 
         // Then match against rules
         for rule in &self.rules {
-            if let Some(result) = self.match_rule_with_cwd(rule, name, args, cwd, suggestion.clone()) {
+            if let Some(result) =
+                self.match_rule_with_cwd(rule, name, args, cwd, suggestion.clone())
+            {
                 return result;
             }
         }
@@ -178,7 +185,8 @@ impl Config {
         let suggestion = self.find_suggestion(name, args);
 
         for rule in &self.rules {
-            if let Some(result) = self.match_rule_with_host(rule, name, args, host, suggestion.clone())
+            if let Some(result) =
+                self.match_rule_with_host(rule, name, args, host, suggestion.clone())
             {
                 return result;
             }
@@ -368,8 +376,23 @@ impl Config {
         // Flags that take an argument for common commands
         let flags_with_args: &[&str] = match cmd_name {
             "git" => &["-C", "-c", "--git-dir", "--work-tree", "--namespace"],
-            "docker" => &["-H", "--host", "--config", "--context", "-c", "-l", "--log-level"],
-            "kubectl" => &["-n", "--namespace", "--context", "--cluster", "-s", "--server"],
+            "docker" => &[
+                "-H",
+                "--host",
+                "--config",
+                "--context",
+                "-c",
+                "-l",
+                "--log-level",
+            ],
+            "kubectl" => &[
+                "-n",
+                "--namespace",
+                "--context",
+                "--cluster",
+                "-s",
+                "--server",
+            ],
             "quickshell" => &[],
             _ => &[],
         };

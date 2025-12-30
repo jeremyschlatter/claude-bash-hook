@@ -52,7 +52,15 @@ mod tests {
 
     #[test]
     fn test_kubectl_exec_with_options() {
-        let cmd = make_cmd(&["exec", "-it", "mypod", "-c", "mycontainer", "--", "/bin/bash"]);
+        let cmd = make_cmd(&[
+            "exec",
+            "-it",
+            "mypod",
+            "-c",
+            "mycontainer",
+            "--",
+            "/bin/bash",
+        ]);
         let result = unwrap(&cmd).unwrap();
         assert_eq!(result.inner_command, Some("/bin/bash".to_string()));
     }

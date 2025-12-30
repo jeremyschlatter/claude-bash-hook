@@ -1,12 +1,12 @@
-use tree_sitter::Parser;
 use std::env;
+use tree_sitter::Parser;
 
 fn main() {
     let mut parser = Parser::new();
 
     let language = tree_sitter_bash::LANGUAGE;
     match parser.set_language(&language.into()) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             println!("Failed to set language: {}", e);
             return;

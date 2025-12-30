@@ -17,7 +17,10 @@ pub fn check_git_checkout(cmd: &Command) -> Option<PermissionResult> {
     let args: Vec<&str> = cmd.args.iter().skip(1).map(|s| s.as_str()).collect();
 
     // git checkout -b <branch> - creating a branch is safe
-    if args.iter().any(|a| *a == "-b" || *a == "-B" || *a == "--branch") {
+    if args
+        .iter()
+        .any(|a| *a == "-b" || *a == "-B" || *a == "--branch")
+    {
         return Some(PermissionResult {
             permission: Permission::Allow,
             reason: "create branch".to_string(),
@@ -30,7 +33,9 @@ pub fn check_git_checkout(cmd: &Command) -> Option<PermissionResult> {
     Some(PermissionResult {
         permission: Permission::Ask,
         reason: "checkout can discard changes".to_string(),
-        suggestion: Some("Consider using 'git switch <branch>' or 'git restore <file>' instead".to_string()),
+        suggestion: Some(
+            "Consider using 'git switch <branch>' or 'git restore <file>' instead".to_string(),
+        ),
     })
 }
 

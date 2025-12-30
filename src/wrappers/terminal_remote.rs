@@ -12,7 +12,16 @@ pub fn unwrap(cmd: &Command) -> Option<UnwrapResult> {
 
     // Options that take arguments
     let opts_with_args = [
-        "-m", "-t", "-i", "-p", "-T", "-w", "--match", "--pane-id", "--tab-id", "--window-id",
+        "-m",
+        "-t",
+        "-i",
+        "-p",
+        "-T",
+        "-w",
+        "--match",
+        "--pane-id",
+        "--tab-id",
+        "--window-id",
         "--title",
     ];
 
