@@ -102,7 +102,12 @@ fn main() {
             hook_input.tool_input.cwd.as_deref(),
         )
     } else {
-        analyze_command(&command, &config, edit_mode)
+        analyze_command(
+            &command,
+            &config,
+            edit_mode,
+            hook_input.tool_input.cwd.as_deref(),
+        )
     };
 
     // For "passthrough" permission on Bash, let Claude Code's built-in system handle it
@@ -157,7 +162,12 @@ fn main() {
 }
 
 /// Analyze a command and return the most restrictive permission
-fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> PermissionResult {
+fn analyze_command(
+    command: &str,
+    config: &Config,
+    edit_mode: bool,
+    initial_cwd: Option<&str>,
+) -> PermissionResult {
     let analysis = analyzer::analyze(command);
 
     if !analysis.success {
@@ -185,20 +195,13 @@ fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> Permissio
         || command.contains("for ")
         || command.contains("until ");
 
-    let mut virtual_cwd: Option<String> = None;
+    let mut virtual_cwd: Option<String> = initial_cwd.map(String::from);
 
     // Check each command and return the most restrictive result
     let mut most_restrictive = PermissionResult::default();
     most_restrictive.permission = Permission::Allow;
 
     for cmd in &analysis.commands {
-        // Track cd commands to update virtual cwd (only if flow is predictable)
-        if !has_uncertain_flow && cmd.name == "cd" {
-            if let Some(dir) = cmd.args.first() {
-                virtual_cwd = Some(dir.clone());
-            }
-        }
-
         let result = check_single_command(
             cmd,
             config,
@@ -209,6 +212,14 @@ fn analyze_command(command: &str, config: &Config, edit_mode: bool) -> Permissio
 
         if result.permission > most_restrictive.permission {
             most_restrictive = result;
+        }
+
+        // Track cd commands to update virtual cwd for subsequent commands
+        // (only if flow is predictable)
+        if !has_uncertain_flow && cmd.name == "cd" {
+            if let Some(dir) = cmd.args.first() {
+                virtual_cwd = Some(dir.clone());
+            }
         }
     }
 
@@ -271,7 +282,7 @@ fn check_single_command(
     if let Some(unwrap_result) = wrappers::unwrap_command(cmd, config) {
         // If there's an inner command, recursively analyze it
         if let Some(ref inner) = unwrap_result.inner_command {
-            let inner_result = analyze_command(inner, config, edit_mode);
+            let inner_result = analyze_command(inner, config, edit_mode, virtual_cwd);
 
             // For SSH with host, check host rules too
             if unwrap_result.host.is_some() {
@@ -430,28 +441,28 @@ mod tests {
     #[test]
     fn test_simple_allow() {
         let config = test_config();
-        let result = analyze_command("ls -la", &config, false);
+        let result = analyze_command("ls -la", &config, false, None);
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_pipeline() {
         let config = test_config();
-        let result = analyze_command("ls | grep foo", &config, false);
+        let result = analyze_command("ls | grep foo", &config, false, None);
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_dangerous_command() {
         let config = test_config();
-        let result = analyze_command("rm -rf /", &config, false);
+        let result = analyze_command("rm -rf /", &config, false, None);
         assert_eq!(result.permission, Permission::Passthrough);
     }
 
     #[test]
     fn test_sudo_wrapper() {
         let config = test_config();
-        let result = analyze_command("sudo ls", &config, false);
+        let result = analyze_command("sudo ls", &config, false, None);
         // sudo unwraps to ls, which is allowed
         assert_eq!(result.permission, Permission::Allow);
     }
@@ -459,7 +470,7 @@ mod tests {
     #[test]
     fn test_sudo_dangerous() {
         let config = test_config();
-        let result = analyze_command("sudo rm -rf /", &config, false);
+        let result = analyze_command("sudo rm -rf /", &config, false, None);
         // sudo unwraps to rm -rf /, which passes through
         assert_eq!(result.permission, Permission::Passthrough);
     }
@@ -467,7 +478,7 @@ mod tests {
     #[test]
     fn test_chain_with_dangerous() {
         let config = test_config();
-        let result = analyze_command("ls && rm -rf /tmp", &config, false);
+        let result = analyze_command("ls && rm -rf /tmp", &config, false, None);
         // Most restrictive should be passthrough
         assert_eq!(result.permission, Permission::Passthrough);
     }
@@ -475,7 +486,7 @@ mod tests {
     #[test]
     fn test_env_dangerous() {
         let config = test_config();
-        let result = analyze_command("env VAR=1 rm -rf /", &config, false);
+        let result = analyze_command("env VAR=1 rm -rf /", &config, false, None);
         // env unwraps to rm -rf /, which passes through
         assert_eq!(result.permission, Permission::Passthrough);
     }
@@ -483,7 +494,7 @@ mod tests {
     #[test]
     fn test_var_assignment_safe() {
         let config = test_config();
-        let result = analyze_command("VAR=1 ls -la", &config, false);
+        let result = analyze_command("VAR=1 ls -la", &config, false, None);
         // ls is allowed even with env var
         assert_eq!(result.permission, Permission::Allow);
     }
@@ -491,7 +502,7 @@ mod tests {
     #[test]
     fn test_git_suggestion() {
         let config = test_config();
-        let result = analyze_command("git checkout main", &config, false);
+        let result = analyze_command("git checkout main", &config, false, None);
         // Should have a suggestion
         assert!(result.suggestion.is_some());
     }
@@ -499,7 +510,7 @@ mod tests {
     #[test]
     fn test_kubectl_exec_safe() {
         let config = test_config();
-        let result = analyze_command("kubectl exec mypod -- ls -la", &config, false);
+        let result = analyze_command("kubectl exec mypod -- ls -la", &config, false, None);
         // kubectl exec unwraps to ls -la, which is allowed
         assert_eq!(result.permission, Permission::Allow);
     }
@@ -507,7 +518,7 @@ mod tests {
     #[test]
     fn test_kubectl_exec_dangerous() {
         let config = test_config();
-        let result = analyze_command("kubectl exec -n prod mypod -- rm -rf /", &config, false);
+        let result = analyze_command("kubectl exec -n prod mypod -- rm -rf /", &config, false, None);
         // kubectl exec unwraps to rm -rf /, which passes through
         assert_eq!(result.permission, Permission::Passthrough);
     }
@@ -515,7 +526,7 @@ mod tests {
     #[test]
     fn test_kubectl_get_allowed() {
         let config = test_config();
-        let result = analyze_command("kubectl get pods", &config, false);
+        let result = analyze_command("kubectl get pods", &config, false, None);
         // kubectl get is allowed (not a wrapper, falls through to default)
         assert_eq!(result.permission, Permission::Allow);
     }
@@ -523,7 +534,7 @@ mod tests {
     #[test]
     fn test_sed_allowed() {
         let config = test_config();
-        let result = analyze_command("echo test | sed 's/t/x/'", &config, false);
+        let result = analyze_command("echo test | sed 's/t/x/'", &config, false, None);
         // sed without -i is allowed
         assert_eq!(result.permission, Permission::Allow);
     }
@@ -531,7 +542,7 @@ mod tests {
     #[test]
     fn test_sed_i_asks_without_edit_mode() {
         let config = test_config();
-        let result = analyze_command("sed -i 's/foo/bar/' file.txt", &config, false);
+        let result = analyze_command("sed -i 's/foo/bar/' file.txt", &config, false, None);
         // sed -i explicitly asks when not in edit mode (safety feature)
         assert_eq!(result.permission, Permission::Ask);
     }
@@ -539,7 +550,7 @@ mod tests {
     #[test]
     fn test_sed_i_allowed_with_edit_mode() {
         let config = test_config();
-        let result = analyze_command("sed -i 's/foo/bar/' file.txt", &config, true);
+        let result = analyze_command("sed -i 's/foo/bar/' file.txt", &config, true, None);
         // sed -i allowed when in edit mode
         assert_eq!(result.permission, Permission::Allow);
     }
@@ -548,13 +559,13 @@ mod tests {
     fn test_help_always_allowed() {
         let config = test_config();
         // --help flag
-        let result = analyze_command("someunknown --help", &config, false);
+        let result = analyze_command("someunknown --help", &config, false, None);
         assert_eq!(result.permission, Permission::Allow);
         // -h flag
-        let result = analyze_command("kubectl delete -h", &config, false);
+        let result = analyze_command("kubectl delete -h", &config, false, None);
         assert_eq!(result.permission, Permission::Allow);
         // help subcommand
-        let result = analyze_command("cargo help build", &config, false);
+        let result = analyze_command("cargo help build", &config, false, None);
         assert_eq!(result.permission, Permission::Allow);
     }
 
@@ -562,13 +573,49 @@ mod tests {
     fn test_version_always_allowed() {
         let config = test_config();
         // --version flag
-        let result = analyze_command("someunknown --version", &config, false);
+        let result = analyze_command("someunknown --version", &config, false, None);
         assert_eq!(result.permission, Permission::Allow);
         // -V flag
-        let result = analyze_command("rustc -V", &config, false);
+        let result = analyze_command("rustc -V", &config, false, None);
         assert_eq!(result.permission, Permission::Allow);
         // version subcommand
-        let result = analyze_command("docker version", &config, false);
+        let result = analyze_command("docker version", &config, false, None);
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_cwd_propagates_through_wrapper() {
+        // Create a config with a cwd-restricted rule and sudo wrapper
+        let config_str = r#"
+            default = "passthrough"
+            [[rules]]
+            commands = ["cd"]
+            permission = "allow"
+            reason = "cd is safe"
+
+            [[rules]]
+            commands = ["./target/release/myapp"]
+            permission = "allow"
+            reason = "project binary"
+            cwd = "/home/test/myproject"
+
+            [[wrappers]]
+            command = "sudo"
+            opts_with_args = ["-g", "-p", "-r", "-t", "-u", "-T", "-C", "-h", "-U"]
+        "#;
+        let config: Config = toml::from_str(config_str).unwrap();
+
+        // Without cd, should passthrough (no cwd match)
+        let result = analyze_command("sudo ./target/release/myapp", &config, false, None);
+        assert_eq!(result.permission, Permission::Passthrough);
+
+        // With cd before sudo, should allow (cwd propagates through wrapper)
+        let result = analyze_command(
+            "cd /home/test/myproject && sudo ./target/release/myapp",
+            &config,
+            false,
+            None,
+        );
         assert_eq!(result.permission, Permission::Allow);
     }
 }
