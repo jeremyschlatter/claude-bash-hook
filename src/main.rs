@@ -412,8 +412,17 @@ fn check_single_command(
         };
     }
 
-    // Regular command - check against rules
-    config.check_command_with_cwd(&cmd.name, &cmd.args, virtual_cwd)
+    // Allow scripts under /tmp/ (e.g., bash /tmp/claude/run-qemu.sh)
+    if cmd.name.starts_with("/tmp/") {
+        return PermissionResult {
+            permission: Permission::Allow,
+            reason: "script in /tmp".to_string(),
+            suggestion: None,
+        };
+    }
+
+    // Regular command - check against rules (use initial_cwd for project-based rules)
+    config.check_command_with_cwd(&cmd.name, &cmd.args, initial_cwd)
 }
 
 /// Format the reason string
@@ -529,7 +538,12 @@ mod tests {
     #[test]
     fn test_kubectl_exec_dangerous() {
         let config = test_config();
-        let result = analyze_command("kubectl exec -n prod mypod -- rm -rf /", &config, false, None);
+        let result = analyze_command(
+            "kubectl exec -n prod mypod -- rm -rf /",
+            &config,
+            false,
+            None,
+        );
         // kubectl exec unwraps to rm -rf /, which passes through
         assert_eq!(result.permission, Permission::Passthrough);
     }
