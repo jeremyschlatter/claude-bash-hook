@@ -235,7 +235,7 @@ reason = "cargo dev commands"
 
 # pacman read-only (query and search)
 [[rules]]
-commands = ["pacman -Q", "pacman -Qi", "pacman -Ql", "pacman -Qo", "pacman -Qs", "pacman -Qd", "pacman -Qdt", "pacman -Ss", "pacman -Si", "pacman -Sg", "pacman -Sl", "pacman -F", "pacman -Fl"]
+commands = ["pacman -Q", "pacman -Qi", "pacman -Ql", "pacman -Qo", "pacman -Qs", "pacman -Qd", "pacman -Qdt", "pacman -Ss", "pacman -Si", "pacman -Sg", "pacman -Sl", "pacman -F", "pacman -Fl", "pactree"]
 permission = "allow"
 reason = "pacman read-only"
 
