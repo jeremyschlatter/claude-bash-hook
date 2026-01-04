@@ -335,11 +335,15 @@ impl Config {
             return false;
         }
 
+        // Normalize: strip leading "./" from both pattern and command
+        let pattern_cmd = parts[0].strip_prefix("./").unwrap_or(parts[0]);
+        let normalized_name = name.strip_prefix("./").unwrap_or(name);
+
         // Normalize command name to basename (e.g., /usr/bin/ls -> ls)
-        let cmd_basename = name.rsplit('/').next().unwrap_or(name);
+        let cmd_basename = normalized_name.rsplit('/').next().unwrap_or(normalized_name);
 
         // First part must match command name (or its basename)
-        if parts[0] != name && parts[0] != cmd_basename {
+        if pattern_cmd != normalized_name && pattern_cmd != cmd_basename {
             return false;
         }
 
@@ -600,6 +604,45 @@ mod tests {
         let config = test_config();
         // /usr/bin/git status should match "git status" rule
         let result = config.check_command("/usr/bin/git", &["status".into()]);
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_dotslash_normalization() {
+        // Test that ./path and path are treated equivalently
+        let toml = r#"
+            [[rules]]
+            commands = ["target/release/foo"]
+            permission = "allow"
+            reason = "test"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+
+        // ./target/release/foo should match "target/release/foo" rule
+        let result = config.check_command("./target/release/foo", &[]);
+        assert_eq!(result.permission, Permission::Allow);
+
+        // target/release/foo should also match
+        let result = config.check_command("target/release/foo", &[]);
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_dotslash_pattern_matches_without_dotslash() {
+        // Pattern has ./, command doesn't
+        let toml = r#"
+            [[rules]]
+            commands = ["./target/release/bar"]
+            permission = "allow"
+            reason = "test"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+
+        // Both should match
+        let result = config.check_command("./target/release/bar", &[]);
+        assert_eq!(result.permission, Permission::Allow);
+
+        let result = config.check_command("target/release/bar", &[]);
         assert_eq!(result.permission, Permission::Allow);
     }
 }
