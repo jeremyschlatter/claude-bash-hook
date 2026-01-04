@@ -35,6 +35,8 @@ struct HookInput {
 struct ToolInput {
     command: Option<String>,
     cwd: Option<String>,
+    // For Write tool
+    file_path: Option<String>,
 }
 
 /// Check if edits are allowed based on permission mode
@@ -59,6 +61,35 @@ struct HookSpecificOutput {
     reason: String,
 }
 
+/// Check if a Write tool path should be blocked
+/// Returns Some((decision, reason)) if we should output a decision, None to pass through
+fn check_write_path(path: &str) -> Option<(&'static str, String)> {
+    // Block /tmp/* unless under /tmp/claude/*
+    if path.starts_with("/tmp/") && !path.starts_with("/tmp/claude/") {
+        return Some((
+            "block",
+            format!("Use /tmp/claude/ instead of /tmp/ for: {}", path),
+        ));
+    }
+    // Allow everything else (pass through to Claude Code's normal handling)
+    None
+}
+
+/// Output a hook decision
+fn output_decision(decision: &str, reason: &str) {
+    let output = HookOutput {
+        hook_output: HookSpecificOutput {
+            event_name: "PreToolUse".to_string(),
+            decision: decision.to_string(),
+            reason: reason.to_string(),
+        },
+    };
+
+    if let Ok(json) = serde_json::to_string(&output) {
+        println!("{}", json);
+    }
+}
+
 fn main() {
     // Read input from stdin
     let mut input = String::new();
@@ -75,6 +106,16 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    // Handle Write tool - block /tmp/* unless under /tmp/claude/*
+    if hook_input.tool_name == "Write" {
+        if let Some(ref path) = hook_input.tool_input.file_path {
+            if let Some(result) = check_write_path(path) {
+                output_decision(&result.0, &result.1);
+            }
+        }
+        return;
+    }
 
     // Handle Bash or Nushell MCP tool
     let is_bash = hook_input.tool_name == "Bash";
@@ -640,5 +681,46 @@ mod tests {
             None,
         );
         assert_eq!(result.permission, Permission::Allow);
+    }
+
+    // Write path tests
+    #[test]
+    fn test_write_tmp_blocked() {
+        let result = check_write_path("/tmp/test.txt");
+        assert!(result.is_some());
+        let (decision, _) = result.unwrap();
+        assert_eq!(decision, "block");
+    }
+
+    #[test]
+    fn test_write_tmp_subdir_blocked() {
+        let result = check_write_path("/tmp/foo/bar.txt");
+        assert!(result.is_some());
+        let (decision, _) = result.unwrap();
+        assert_eq!(decision, "block");
+    }
+
+    #[test]
+    fn test_write_tmp_claude_allowed() {
+        let result = check_write_path("/tmp/claude/test.txt");
+        assert!(result.is_none()); // None = pass through = allowed
+    }
+
+    #[test]
+    fn test_write_tmp_claude_subdir_allowed() {
+        let result = check_write_path("/tmp/claude/foo/bar.txt");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_write_home_allowed() {
+        let result = check_write_path("/home/user/file.txt");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_write_project_allowed() {
+        let result = check_write_path("/syncthing/Sync/Projects/test.rs");
+        assert!(result.is_none());
     }
 }
