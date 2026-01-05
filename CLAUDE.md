@@ -1,0 +1,121 @@
+# Claude Bash Hook
+
+PreToolUse hook for Claude Code that provides granular permission control over Bash and Nushell commands.
+
+## Architecture
+
+- **main.rs** - Hook entry point, reads JSON from stdin, outputs permission decisions
+- **analyzer.rs** - Bash AST parsing using tree-sitter-bash
+- **nushell.rs** - Nushell command parsing using nu-parser
+- **config.rs** - TOML config loading and rule matching (glob patterns, subcommand detection)
+- **wrappers/** - Unwrap wrapper commands to analyze inner commands:
+  - Config-driven: sudo, authsudo, nice, nohup, time, strace, ltrace, nu, fish
+  - Special handling: ssh, scp, rsync, env, kubectl exec, timeout, xargs, sh/bash/zsh, kitty-remote, wezterm-remote
+- **sql.rs** - MySQL/MariaDB/SQLite query analysis (allow SELECT, ask for writes)
+- **git.rs** - Git-specific rules (push branch protection, checkout handling)
+- **docker.rs** - Docker run bind mount analysis
+- **tar.rs** - Tar extraction path validation
+- **rm.rs** - Delete command path validation
+- **tee.rs** - Tee output path validation
+- **advice.rs** - Optional AI-powered advice for permission decisions
+
+## Build
+
+Uses musl target for static linking:
+
+```bash
+cargo build --release --target x86_64-unknown-linux-musl
+```
+
+Binary: `target/x86_64-unknown-linux-musl/release/claude-bash-hook`
+
+Symlinked to: `/home/osso/bin/claude-bash-hook`
+
+## Config
+
+Location: `~/.config/claude-bash-hook/config.toml`
+
+Default config embedded in binary (`config.default.toml`). Copy and customize:
+
+```bash
+mkdir -p ~/.config/claude-bash-hook
+cp config.default.toml ~/.config/claude-bash-hook/config.toml
+```
+
+### Config Format
+
+```toml
+default = "passthrough"  # allow, ask, deny, passthrough
+enable_advice = false    # AI-powered advice for ask/deny decisions
+
+[[rules]]
+commands = ["ls", "cat", "git status"]  # Command or command+subcommand patterns
+permission = "allow"                     # allow, ask, deny, passthrough, check_host
+reason = "read-only commands"
+cwd = "/home/user/project"              # Optional: only match in this directory tree
+
+[[rules]]
+commands = ["ssh", "scp"]
+permission = "check_host"
+reason = "remote connection"
+host_rules = [
+    { pattern = "*.internal.com", permission = "allow" },
+    { pattern = "*", permission = "ask" },
+]
+
+[[wrappers]]
+command = "sudo"
+opts_with_args = ["-u", "-g"]  # Options that consume the next argument
+
+[[suggestions]]
+command = "git checkout"
+message = "Consider using 'git switch' instead"
+```
+
+### Permission Levels
+
+- **allow** - Auto-approve, no user prompt
+- **passthrough** - Let Claude Code's built-in system handle (for Bash only; becomes "ask" for Nushell MCP)
+- **ask** - Prompt user for approval
+- **deny** - Block with reason
+
+## Hook Protocol
+
+Receives JSON on stdin:
+```json
+{
+  "tool_name": "Bash",
+  "tool_input": { "command": "ls -la" },
+  "permission_mode": "default",
+  "cwd": "/home/user/project"
+}
+```
+
+Outputs JSON to stdout (or nothing for passthrough):
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "allow",
+    "permissionDecisionReason": "read-only commands"
+  }
+}
+```
+
+Also handles:
+- `Write` tool - blocks `/tmp/*` unless under `/tmp/claude/*`
+- `mcp__nushell__execute` - Nushell MCP tool (passthrough becomes ask)
+
+## Testing
+
+```bash
+cargo test
+```
+
+## Logging
+
+Logs to journald with identifier `claude-bash-hook`:
+
+```bash
+journalctl -t claude-bash-hook -f
+```
