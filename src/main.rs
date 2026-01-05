@@ -15,6 +15,7 @@ mod tee;
 mod wrappers;
 
 use config::{Config, Permission, PermissionResult};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read};
 
@@ -91,6 +92,13 @@ fn output_decision(decision: &str, reason: &str) {
 }
 
 fn main() {
+    // Initialize journald logging
+    systemd_journal_logger::JournalLog::new()
+        .unwrap()
+        .with_syslog_identifier("claude-bash-hook".to_string())
+        .install()
+        .ok();
+    log::set_max_level(log::LevelFilter::Info);
     // Read input from stdin
     let mut input = String::new();
     if let Err(e) = io::stdin().read_to_string(&mut input) {
@@ -161,11 +169,30 @@ fn main() {
             }
         } else {
             // Bash: let Claude Code handle it
+            info!(
+                "decision=passthrough cwd={:?} command={:?} reason={:?}",
+                hook_input.cwd, command, result.reason
+            );
             return;
         }
     } else {
         result
     };
+
+    // Log the decision
+    let decision_str = match result.permission {
+        Permission::Allow => "allow",
+        Permission::Passthrough => "passthrough",
+        Permission::Ask => "ask",
+        Permission::Deny => "deny",
+    };
+    info!(
+        "decision={} cwd={:?} command={:?} reason={:?}",
+        decision_str,
+        hook_input.cwd,
+        command,
+        result.reason
+    );
 
     // Build reason, optionally with AI advice
     let reason = if config.enable_advice

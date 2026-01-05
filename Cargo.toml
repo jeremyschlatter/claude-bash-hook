@@ -13,6 +13,8 @@ glob-match = "0.2"
 nu-parser = "=0.109.1"
 nu-protocol = "=0.109.1"
 nu-engine = "=0.109.1"
+log = "0.4"
+systemd-journal-logger = "2"
 
 [profile.release]
 lto = false

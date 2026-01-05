@@ -271,7 +271,23 @@ impl Config {
             .canonicalize()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or(expanded);
-        glob_match(&expanded, &cwd_str)
+
+        // Strip trailing /** or /* for prefix matching
+        let base_path = expanded
+            .strip_suffix("/**")
+            .or_else(|| expanded.strip_suffix("/*"))
+            .unwrap_or(&expanded);
+
+        // Use prefix matching: cwd must equal pattern or be under it
+        if cwd_str == base_path {
+            return true;
+        }
+        let prefix = if base_path.ends_with('/') {
+            base_path.to_string()
+        } else {
+            format!("{}/", base_path)
+        };
+        cwd_str.starts_with(&prefix)
     }
 
     /// Match a rule with host checking
@@ -708,5 +724,66 @@ mod tests {
             Some("/home/other/project"),
         );
         assert_eq!(result.permission, Permission::Ask);
+    }
+
+    #[test]
+    fn test_cwd_matches_subdirectories() {
+        // cwd pattern should match the exact directory and subdirectories
+        let toml = r#"
+            [[rules]]
+            commands = ["run-tests.sh"]
+            permission = "allow"
+            reason = "test"
+            cwd = "/home/user/project"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+
+        // Exact match
+        let result = config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user/project"));
+        assert_eq!(result.permission, Permission::Allow);
+
+        // Subdirectory match
+        let result =
+            config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user/project/src"));
+        assert_eq!(result.permission, Permission::Allow);
+
+        // Deeper subdirectory match
+        let result = config.check_command_with_cwd(
+            "run-tests.sh",
+            &[],
+            Some("/home/user/project/src/tests"),
+        );
+        assert_eq!(result.permission, Permission::Allow);
+
+        // Should NOT match sibling directory
+        let result =
+            config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user/project2"));
+        assert_eq!(result.permission, Permission::Ask);
+
+        // Should NOT match parent directory
+        let result = config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user"));
+        assert_eq!(result.permission, Permission::Ask);
+    }
+
+    #[test]
+    fn test_cwd_with_glob_suffix() {
+        // cwd pattern with /** suffix should also work
+        let toml = r#"
+            [[rules]]
+            commands = ["run-tests.sh"]
+            permission = "allow"
+            reason = "test"
+            cwd = "/home/user/project/**"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+
+        // Exact match (without the /**)
+        let result = config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user/project"));
+        assert_eq!(result.permission, Permission::Allow);
+
+        // Subdirectory match
+        let result =
+            config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user/project/src"));
+        assert_eq!(result.permission, Permission::Allow);
     }
 }
