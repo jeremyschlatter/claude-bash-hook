@@ -188,10 +188,7 @@ fn main() {
     };
     info!(
         "decision={} cwd={:?} command={:?} reason={:?}",
-        decision_str,
-        hook_input.cwd,
-        command,
-        result.reason
+        decision_str, hook_input.cwd, command, result.reason
     );
 
     // Build reason, optionally with AI advice
