@@ -5,6 +5,7 @@
 mod advice;
 mod analyzer;
 mod config;
+mod curl;
 mod docker;
 mod git;
 mod nushell;
@@ -447,6 +448,13 @@ fn check_single_command(
     // Special handling for tar - allow extraction to /tmp/claude/
     if cmd.name == "tar" {
         if let Some(result) = tar::check_tar(cmd, virtual_cwd, has_uncertain_flow) {
+            return result;
+        }
+    }
+
+    // Special handling for curl - allow localhost, check host rules for others
+    if cmd.name == "curl" {
+        if let Some(result) = curl::check_curl(cmd, config) {
             return result;
         }
     }
