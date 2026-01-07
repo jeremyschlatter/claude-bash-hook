@@ -50,15 +50,6 @@ fn extract_host(url: &str) -> Option<String> {
     }
 }
 
-/// Check if a host is localhost
-fn is_localhost(host: &str) -> bool {
-    matches!(
-        host,
-        "localhost" | "127.0.0.1" | "::1" | "[::1]" | "0.0.0.0"
-    ) || host.starts_with("127.")
-        || host.ends_with(".localhost")
-}
-
 /// Check a curl command and extract URL hosts
 /// Returns a permission result based on the URL host
 pub fn check_curl(cmd: &Command, config: &Config) -> Option<PermissionResult> {
@@ -156,30 +147,18 @@ pub fn check_curl(cmd: &Command, config: &Config) -> Option<PermissionResult> {
         return None;
     }
 
-    // Check each URL's host
-    let mut all_localhost = true;
-    let mut hosts: Vec<String> = Vec::new();
+    // Extract hosts from URLs
+    let hosts: Vec<String> = urls
+        .iter()
+        .filter_map(|url| extract_host(url))
+        .collect();
 
-    for url in &urls {
-        if let Some(host) = extract_host(url) {
-            hosts.push(host.clone());
-            if !is_localhost(&host) {
-                all_localhost = false;
-            }
-        }
+    if hosts.is_empty() {
+        return None;
     }
 
-    // If all URLs are localhost, allow
-    if all_localhost && !hosts.is_empty() {
-        return Some(PermissionResult {
-            permission: Permission::Allow,
-            reason: format!("curl to localhost ({})", hosts.join(", ")),
-            suggestion: None,
-        });
-    }
-
-    // For non-localhost URLs, use check_host permission via config
-    // Check if there's a curl rule with host_rules
+    // Check each host against config rules
+    // Return the most restrictive result (or first non-passthrough)
     for host in &hosts {
         let result = config.check_command_with_host("curl", &cmd.args, Some(host));
         if result.permission != Permission::Passthrough {
@@ -243,17 +222,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_is_localhost() {
-        assert!(is_localhost("localhost"));
-        assert!(is_localhost("127.0.0.1"));
-        assert!(is_localhost("127.0.0.2"));
-        assert!(is_localhost("::1"));
-        assert!(is_localhost("foo.localhost"));
-        assert!(!is_localhost("example.com"));
-        assert!(!is_localhost("localhost.evil.com"));
-    }
-
     fn make_cmd(args: &[&str]) -> Command {
         Command {
             name: "curl".to_string(),
@@ -262,17 +230,36 @@ mod tests {
         }
     }
 
+    fn config_with_curl_rules() -> Config {
+        let config_str = r#"
+            default = "passthrough"
+            [[rules]]
+            commands = ["curl"]
+            permission = "check_host"
+            reason = "curl"
+            host_rules = [
+                { pattern = "localhost", permission = "allow" },
+                { pattern = "*.localhost", permission = "allow" },
+                { pattern = "127.0.0.1", permission = "allow" },
+                { pattern = "127.*", permission = "allow" },
+                { pattern = "gcdev.site", permission = "allow" },
+                { pattern = "*", permission = "ask" },
+            ]
+        "#;
+        toml::from_str(config_str).unwrap()
+    }
+
     #[test]
     fn test_curl_localhost_allowed() {
-        let config = Config::default();
+        let config = config_with_curl_rules();
         let cmd = make_cmd(&["-s", "http://127.0.0.1:3000/debug"]);
         let result = check_curl(&cmd, &config).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
-    fn test_curl_localhost_with_header() {
-        let config = Config::default();
+    fn test_curl_localhost_name_allowed() {
+        let config = config_with_curl_rules();
         let cmd = make_cmd(&[
             "-H",
             "Content-Type: application/json",
@@ -283,17 +270,33 @@ mod tests {
     }
 
     #[test]
-    fn test_curl_external_no_rule() {
+    fn test_curl_allowed_host() {
+        let config = config_with_curl_rules();
+        let cmd = make_cmd(&["https://gcdev.site/api"]);
+        let result = check_curl(&cmd, &config).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_curl_external_asks() {
+        let config = config_with_curl_rules();
+        let cmd = make_cmd(&["https://example.com/api"]);
+        let result = check_curl(&cmd, &config).unwrap();
+        assert_eq!(result.permission, Permission::Ask);
+    }
+
+    #[test]
+    fn test_curl_no_rule_passthrough() {
+        // With default config (no curl rules), passthrough
         let config = Config::default();
         let cmd = make_cmd(&["https://example.com/api"]);
-        // No rule for external hosts - returns None (passthrough)
         let result = check_curl(&cmd, &config);
         assert!(result.is_none());
     }
 
     #[test]
     fn test_curl_no_url() {
-        let config = Config::default();
+        let config = config_with_curl_rules();
         let cmd = make_cmd(&["--help"]);
         let result = check_curl(&cmd, &config);
         assert!(result.is_none());
@@ -301,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_not_curl() {
-        let config = Config::default();
+        let config = config_with_curl_rules();
         let cmd = Command {
             name: "wget".to_string(),
             args: vec!["http://localhost".to_string()],
