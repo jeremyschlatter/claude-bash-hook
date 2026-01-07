@@ -3,6 +3,7 @@
 //! Unwraps wrapper commands to analyze the inner command.
 //! Simple wrappers are config-driven, complex ones have special handling.
 
+mod docker_exec;
 mod env;
 mod kubectl;
 mod rsync;
@@ -37,6 +38,7 @@ pub fn unwrap_command(cmd: &Command, config: &Config) -> Option<UnwrapResult> {
         "rsync" => return rsync::unwrap(cmd),
         "env" => return env::unwrap(cmd),
         "kubectl" => return kubectl::unwrap(cmd),
+        "docker" => return docker_exec::unwrap(cmd),
         "timeout" => return timeout::unwrap(cmd),
         "kitty-remote" | "wezterm-remote" => return terminal_remote::unwrap(cmd),
         "xargs" => return xargs::unwrap(cmd),
