@@ -4,11 +4,17 @@
 
 use crate::analyzer::Command;
 use crate::config::{Permission, PermissionResult};
+use std::path::Path;
 use std::process::Command as ProcessCommand;
 
 /// Check if an rm command should be auto-allowed
 /// Allows deletion of files under /tmp/ or the project directory (initial_cwd)
-pub fn check_rm(cmd: &Command, initial_cwd: Option<&str>) -> Option<PermissionResult> {
+/// Uses virtual_cwd to resolve relative paths (from cd commands in pipeline)
+pub fn check_rm(
+    cmd: &Command,
+    virtual_cwd: Option<&str>,
+    initial_cwd: Option<&str>,
+) -> Option<PermissionResult> {
     if cmd.name != "rm" {
         return None;
     }
@@ -28,7 +34,7 @@ pub fn check_rm(cmd: &Command, initial_cwd: Option<&str>) -> Option<PermissionRe
 
     // Check each file argument
     for path in &file_args {
-        if !is_safe_path(path, initial_cwd) {
+        if !is_safe_path(path, virtual_cwd, initial_cwd) {
             return None;
         }
     }
@@ -41,7 +47,7 @@ pub fn check_rm(cmd: &Command, initial_cwd: Option<&str>) -> Option<PermissionRe
 }
 
 /// Check if a path is safe to delete (under /tmp/ or project dir)
-fn is_safe_path(path: &str, initial_cwd: Option<&str>) -> bool {
+fn is_safe_path(path: &str, virtual_cwd: Option<&str>, initial_cwd: Option<&str>) -> bool {
     if path.is_empty() {
         return false;
     }
@@ -50,11 +56,21 @@ fn is_safe_path(path: &str, initial_cwd: Option<&str>) -> bool {
         return false;
     }
 
-    let resolved = match resolve_path(path) {
+    // Make path absolute using virtual_cwd if relative
+    let abs_path = if Path::new(path).is_absolute() {
+        path.to_string()
+    } else if let Some(cwd) = virtual_cwd {
+        format!("{}/{}", cwd.trim_end_matches('/'), path)
+    } else {
+        // No virtual_cwd and relative path - can't safely resolve
+        return false;
+    };
+
+    let resolved = match resolve_path(&abs_path) {
         Some(p) => p,
         None => {
             // Path doesn't exist - check parent
-            if let Some(parent) = std::path::Path::new(path).parent() {
+            if let Some(parent) = Path::new(&abs_path).parent() {
                 if let Some(parent_str) = parent.to_str() {
                     if !parent_str.is_empty() {
                         if let Some(resolved_parent) = resolve_path(parent_str) {
@@ -130,35 +146,35 @@ mod tests {
     #[test]
     fn test_rm_tmp_file() {
         let cmd = make_cmd(&["/tmp/test.txt"]);
-        let result = check_rm(&cmd, None).unwrap();
+        let result = check_rm(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_rm_tmp_subdir() {
         let cmd = make_cmd(&["-rf", "/tmp/mydir/subdir"]);
-        let result = check_rm(&cmd, None).unwrap();
+        let result = check_rm(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_rm_tmp_itself_not_allowed() {
         let cmd = make_cmd(&["-rf", "/tmp"]);
-        let result = check_rm(&cmd, None);
+        let result = check_rm(&cmd, None, None);
         assert!(result.is_none()); // passthrough
     }
 
     #[test]
     fn test_rm_tmp_slash_not_allowed() {
         let cmd = make_cmd(&["-rf", "/tmp/"]);
-        let result = check_rm(&cmd, None);
+        let result = check_rm(&cmd, None, None);
         assert!(result.is_none()); // passthrough
     }
 
     #[test]
     fn test_rm_home_not_allowed() {
         let cmd = make_cmd(&["/home/user/file"]);
-        let result = check_rm(&cmd, None);
+        let result = check_rm(&cmd, None, None);
         assert!(result.is_none()); // passthrough
     }
 
@@ -166,28 +182,28 @@ mod tests {
     fn test_rm_project_file() {
         // Use /syncthing as project dir since it exists on this system
         let cmd = make_cmd(&["/syncthing/Sync/Projects/test/target/debug/test"]);
-        let result = check_rm(&cmd, Some("/syncthing/Sync/Projects/test")).unwrap();
+        let result = check_rm(&cmd, None, Some("/syncthing/Sync/Projects/test")).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_rm_outside_project() {
         let cmd = make_cmd(&["/var/other/file"]);
-        let result = check_rm(&cmd, Some("/syncthing/Sync/Projects/test"));
+        let result = check_rm(&cmd, None, Some("/syncthing/Sync/Projects/test"));
         assert!(result.is_none()); // passthrough
     }
 
     #[test]
     fn test_rm_multiple_tmp_files() {
         let cmd = make_cmd(&["/tmp/a", "/tmp/b", "/tmp/c"]);
-        let result = check_rm(&cmd, None).unwrap();
+        let result = check_rm(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_rm_mixed_paths_not_allowed() {
         let cmd = make_cmd(&["/tmp/a", "/home/user/b"]);
-        let result = check_rm(&cmd, None);
+        let result = check_rm(&cmd, None, None);
         assert!(result.is_none()); // passthrough because /home path
     }
 
@@ -198,7 +214,54 @@ mod tests {
             args: vec!["/tmp".to_string()],
             text: "ls /tmp".to_string(),
         };
-        let result = check_rm(&cmd, None);
+        let result = check_rm(&cmd, None, None);
         assert!(result.is_none());
+    }
+
+    // Virtual cwd tests
+
+    #[test]
+    fn test_rm_relative_with_virtual_cwd_tmp() {
+        // cd /tmp/claude && rm test -> allowed
+        let cmd = make_cmd(&["test"]);
+        let result = check_rm(&cmd, Some("/tmp/claude"), None).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_rm_relative_with_virtual_cwd_root() {
+        // cd / && rm test -> NOT allowed (would delete /test)
+        let cmd = make_cmd(&["test"]);
+        let result = check_rm(&cmd, Some("/"), None);
+        assert!(result.is_none()); // passthrough
+    }
+
+    #[test]
+    fn test_rm_relative_with_virtual_cwd_project() {
+        // cd /syncthing/Sync/Projects/test && rm target/debug/test -> allowed
+        let cmd = make_cmd(&["target/debug/test"]);
+        let result = check_rm(
+            &cmd,
+            Some("/syncthing/Sync/Projects/test"),
+            Some("/syncthing/Sync/Projects/test"),
+        )
+        .unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_rm_relative_no_virtual_cwd() {
+        // rm test with no cwd info -> passthrough (can't resolve safely)
+        let cmd = make_cmd(&["test"]);
+        let result = check_rm(&cmd, None, None);
+        assert!(result.is_none()); // passthrough
+    }
+
+    #[test]
+    fn test_rm_absolute_ignores_virtual_cwd() {
+        // cd / && rm /tmp/test -> allowed (absolute path ignores virtual_cwd)
+        let cmd = make_cmd(&["/tmp/test"]);
+        let result = check_rm(&cmd, Some("/"), None).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
     }
 }

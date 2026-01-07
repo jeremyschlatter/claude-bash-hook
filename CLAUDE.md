@@ -10,8 +10,9 @@ PreToolUse hook for Claude Code that provides granular permission control over B
 - **config.rs** - TOML config loading and rule matching (glob patterns, subcommand detection)
 - **wrappers/** - Unwrap wrapper commands to analyze inner commands:
   - Config-driven: sudo, authsudo, nice, nohup, time, strace, ltrace, nu, fish
-  - Special handling: ssh, scp, rsync, env, kubectl exec, timeout, xargs, sh/bash/zsh, kitty-remote, wezterm-remote
+  - Special handling: ssh, scp, rsync, env, kubectl exec, docker exec/compose, timeout, xargs, sh/bash/zsh, kitty-remote, wezterm-remote
 - **sql.rs** - MySQL/MariaDB/SQLite query analysis (allow SELECT, ask for writes)
+- **redis.rs** - Redis command analysis (allow read-only commands like GET/LLEN, ask for writes)
 - **git.rs** - Git-specific rules (push branch protection, checkout handling)
 - **docker.rs** - Docker run bind mount analysis
 - **tar.rs** - Tar extraction path validation

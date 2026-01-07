@@ -9,6 +9,7 @@ mod curl;
 mod docker;
 mod git;
 mod nushell;
+mod redis;
 mod rm;
 mod sql;
 mod tar;
@@ -263,8 +264,7 @@ fn analyze_command(
     let mut virtual_cwd: Option<String> = initial_cwd.map(String::from);
 
     // Check each command and return the most restrictive result
-    let mut most_restrictive = PermissionResult::default();
-    most_restrictive.permission = Permission::Allow;
+    let mut most_restrictive: Option<PermissionResult> = None;
 
     for cmd in &analysis.commands {
         let result = check_single_command(
@@ -276,9 +276,11 @@ fn analyze_command(
             has_uncertain_flow,
         );
 
-        if result.permission > most_restrictive.permission {
-            most_restrictive = result;
-        }
+        most_restrictive = Some(match most_restrictive {
+            None => result,
+            Some(prev) if result.permission > prev.permission => result,
+            Some(prev) => prev,
+        });
 
         // Track cd commands to update virtual cwd for subsequent commands
         // (only if flow is predictable)
@@ -289,7 +291,11 @@ fn analyze_command(
         }
     }
 
-    most_restrictive
+    most_restrictive.unwrap_or_else(|| PermissionResult {
+        permission: Permission::Allow,
+        reason: String::new(),
+        suggestion: None,
+    })
 }
 
 /// Analyze a nushell command and return the most restrictive permission
@@ -322,19 +328,24 @@ fn analyze_nushell_command(
     }
 
     // Check each external command against the same rules as bash
-    let mut most_restrictive = PermissionResult::default();
-    most_restrictive.permission = Permission::Allow;
+    let mut most_restrictive: Option<PermissionResult> = None;
 
     for cmd in &analysis.commands {
         // For nushell, cwd is both virtual and initial (no cd tracking)
         let result = check_single_command(cmd, config, edit_mode, cwd, cwd, false);
 
-        if result.permission > most_restrictive.permission {
-            most_restrictive = result;
-        }
+        most_restrictive = Some(match most_restrictive {
+            None => result,
+            Some(prev) if result.permission > prev.permission => result,
+            Some(prev) => prev,
+        });
     }
 
-    most_restrictive
+    most_restrictive.unwrap_or_else(|| PermissionResult {
+        permission: Permission::Allow,
+        reason: String::new(),
+        suggestion: None,
+    })
 }
 
 /// Check a single command, handling wrappers recursively
@@ -410,6 +421,13 @@ fn check_single_command(
         }
     }
 
+    // Special handling for redis-cli - allow read-only commands
+    if cmd.name == "redis-cli" {
+        if let Some(result) = redis::check_redis_cli(cmd) {
+            return result;
+        }
+    }
+
     // Special handling for git push - check target branch
     if cmd.name == "git" && cmd.args.first().map(|s| s.as_str()) == Some("push") {
         if let Some(result) = git::check_git_push(cmd) {
@@ -433,7 +451,7 @@ fn check_single_command(
 
     // Special handling for rm - allow deletion under /tmp/ or project dir
     if cmd.name == "rm" {
-        if let Some(result) = rm::check_rm(cmd, initial_cwd) {
+        if let Some(result) = rm::check_rm(cmd, virtual_cwd, initial_cwd) {
             return result;
         }
     }
@@ -754,5 +772,32 @@ mod tests {
     fn test_write_project_allowed() {
         let result = check_write_path("/syncthing/Sync/Projects/test.rs");
         assert!(result.is_none());
+    }
+
+    // rm with cd tests (virtual cwd)
+
+    #[test]
+    fn test_cd_tmp_claude_then_rm_allowed() {
+        // From cwd /, "cd /tmp/claude && rm test" should be allowed
+        let config = test_config();
+        let result = analyze_command("cd /tmp/claude && rm test", &config, false, Some("/"));
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_cd_root_then_rm_not_allowed() {
+        // From cwd /tmp/claude, "cd / && rm test" should NOT be allowed
+        let config = test_config();
+        let result = analyze_command("cd / && rm test", &config, false, Some("/tmp/claude"));
+        // Should passthrough (not allowed) because /test is not under /tmp/ or project
+        assert_eq!(result.permission, Permission::Passthrough);
+    }
+
+    #[test]
+    fn test_rm_absolute_path_ignores_cd() {
+        // From cwd /, "cd / && rm /tmp/test" should be allowed (absolute path)
+        let config = test_config();
+        let result = analyze_command("cd / && rm /tmp/test", &config, false, Some("/"));
+        assert_eq!(result.permission, Permission::Allow);
     }
 }
