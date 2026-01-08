@@ -78,6 +78,10 @@ pub struct Rule {
     /// Required working directory (glob pattern, e.g., "/home/user/Projects/linux")
     #[serde(default)]
     pub cwd: Option<String>,
+
+    /// Options that take arguments (for subcommand detection)
+    #[serde(default)]
+    pub opts_with_args: Vec<String>,
 }
 
 /// Host-based permission rule
@@ -220,7 +224,7 @@ impl Config {
         suggestion: Option<String>,
     ) -> Option<PermissionResult> {
         for pattern in &rule.commands {
-            if self.matches_pattern_with_cwd(pattern, name, args, cwd) {
+            if self.matches_pattern_with_cwd(pattern, name, args, cwd, &rule.opts_with_args) {
                 // Check cwd constraint if present
                 if let Some(ref cwd_pattern) = rule.cwd {
                     if !self.matches_cwd(cwd_pattern, cwd) {
@@ -300,7 +304,7 @@ impl Config {
         suggestion: Option<String>,
     ) -> Option<PermissionResult> {
         for pattern in &rule.commands {
-            if self.matches_pattern(pattern, name, args) {
+            if self.matches_pattern(pattern, name, args, &rule.opts_with_args) {
                 // Check cwd constraint if present
                 if let Some(ref cwd_pattern) = rule.cwd {
                     if !self.matches_cwd(cwd_pattern, None) {
@@ -346,9 +350,10 @@ impl Config {
         name: &str,
         args: &[String],
         cwd: Option<&str>,
+        rule_opts: &[String],
     ) -> bool {
         // Try direct match first
-        if self.matches_pattern(pattern, name, args) {
+        if self.matches_pattern(pattern, name, args, rule_opts) {
             return true;
         }
 
@@ -361,7 +366,7 @@ impl Config {
                     format!("{}/", cwd)
                 };
                 if let Some(relative) = name.strip_prefix(&cwd_with_slash) {
-                    if self.matches_pattern(pattern, relative, args) {
+                    if self.matches_pattern(pattern, relative, args, rule_opts) {
                         return true;
                     }
                 }
@@ -376,7 +381,13 @@ impl Config {
     /// - "ls" - just the command name
     /// - "git status" - command with subcommand
     /// - "rm -rf" - command with specific flag
-    fn matches_pattern(&self, pattern: &str, name: &str, args: &[String]) -> bool {
+    fn matches_pattern(
+        &self,
+        pattern: &str,
+        name: &str,
+        args: &[String],
+        rule_opts: &[String],
+    ) -> bool {
         let parts: Vec<&str> = pattern.split_whitespace().collect();
 
         if parts.is_empty() {
@@ -405,7 +416,7 @@ impl Config {
 
         // Check remaining parts against args
         // Collect all non-flag args (subcommands)
-        let subcommands = self.find_subcommands(name, args);
+        let subcommands = self.find_subcommands(name, args, rule_opts);
         let mut subcommand_idx = 0;
 
         for part in &parts[1..] {
@@ -427,9 +438,14 @@ impl Config {
     }
 
     /// Find all subcommands (positional args), skipping flags and their arguments
-    fn find_subcommands(&self, cmd_name: &str, args: &[String]) -> Vec<String> {
-        // Flags that take an argument for common commands
-        let flags_with_args: &[&str] = match cmd_name {
+    fn find_subcommands(
+        &self,
+        cmd_name: &str,
+        args: &[String],
+        rule_opts: &[String],
+    ) -> Vec<String> {
+        // Flags that take an argument for common commands (hardcoded defaults)
+        let default_flags: &[&str] = match cmd_name {
             "git" => &["-C", "-c", "--git-dir", "--work-tree", "--namespace"],
             "docker" => &[
                 "-H",
@@ -448,7 +464,7 @@ impl Config {
                 "-s",
                 "--server",
             ],
-            "quickshell" => &[],
+            "sentry" => &["-s", "--slug"],
             _ => &[],
         };
 
@@ -468,7 +484,8 @@ impl Config {
                     arg.as_str()
                 };
 
-                if flags_with_args.contains(&flag) {
+                // Check rule-specific opts first, then hardcoded defaults
+                if rule_opts.iter().any(|o| o == flag) || default_flags.contains(&flag) {
                     skip_next = true;
                 }
                 continue;
@@ -784,6 +801,51 @@ mod tests {
         // Subdirectory match
         let result =
             config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user/project/src"));
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_rule_opts_with_args() {
+        // Rule-specific opts_with_args should be used for subcommand detection
+        let toml = r#"
+            default = "ask"
+            [[rules]]
+            commands = ["mycli projects", "mycli issues"]
+            permission = "allow"
+            reason = "mycli read-only"
+            opts_with_args = ["-s", "--slug"]
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+
+        // Without the -s flag, "gc" would be the first subcommand
+        let result = config.check_command("mycli", &["gc".into(), "projects".into()]);
+        assert_eq!(result.permission, Permission::Ask); // gc != projects
+
+        // With -s flag, "gc" is consumed as argument, "projects" is first subcommand
+        let result = config.check_command("mycli", &["-s".into(), "gc".into(), "projects".into()]);
+        assert_eq!(result.permission, Permission::Allow);
+
+        // Same with long form
+        let result =
+            config.check_command("mycli", &["--slug".into(), "gc".into(), "issues".into()]);
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_sentry_with_slug_flag() {
+        // Sentry has hardcoded -s/--slug in find_subcommands
+        let toml = r#"
+            default = "ask"
+            [[rules]]
+            commands = ["sentry projects", "sentry issues"]
+            permission = "allow"
+            reason = "sentry read-only"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+
+        // sentry -s gc projects should match "sentry projects"
+        let result =
+            config.check_command("sentry", &["-s".into(), "gc".into(), "projects".into()]);
         assert_eq!(result.permission, Permission::Allow);
     }
 }

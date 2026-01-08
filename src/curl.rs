@@ -287,8 +287,15 @@ mod tests {
 
     #[test]
     fn test_curl_no_rule_passthrough() {
-        // With default config (no curl rules), passthrough
-        let config = Config::default();
+        // With config that has no curl rules, passthrough
+        let config_str = r#"
+            default = "passthrough"
+            [[rules]]
+            commands = ["ls"]
+            permission = "allow"
+            reason = "read-only"
+        "#;
+        let config: Config = toml::from_str(config_str).unwrap();
         let cmd = make_cmd(&["https://example.com/api"]);
         let result = check_curl(&cmd, &config);
         assert!(result.is_none());
