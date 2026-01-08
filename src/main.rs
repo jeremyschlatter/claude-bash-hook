@@ -400,15 +400,7 @@ fn check_single_command(
     }
 
     // Special handling for mysql/mariadb - allow read-only queries
-    if matches!(
-        cmd.name.as_str(),
-        "mysql"
-            | "mariadb"
-            | "mysql-prod"
-            | "mysql-prod-root"
-            | "mysql-external"
-            | "mysql-replication"
-    ) {
+    if config.is_mysql_alias(&cmd.name) {
         if let Some(result) = sql::check_mysql_query(cmd) {
             return result;
         }
@@ -421,8 +413,8 @@ fn check_single_command(
         }
     }
 
-    // Special handling for redis-cli - allow read-only commands
-    if cmd.name == "redis-cli" {
+    // Special handling for redis-cli/valkey-cli - allow read-only commands
+    if cmd.name == "redis-cli" || cmd.name == "valkey-cli" {
         if let Some(result) = redis::check_redis_cli(cmd) {
             return result;
         }

@@ -45,6 +45,10 @@ pub struct Config {
     #[serde(default)]
     pub master_push_allowed: Vec<String>,
 
+    /// MySQL/MariaDB command aliases (for SQL query analysis)
+    #[serde(default = "default_mysql_aliases")]
+    pub mysql_aliases: Vec<String>,
+
     /// Command rules
     #[serde(default)]
     pub rules: Vec<Rule>,
@@ -60,6 +64,13 @@ pub struct Config {
 
 fn default_permission() -> String {
     "ask".to_string()
+}
+
+fn default_mysql_aliases() -> Vec<String> {
+    vec![
+        "mysql".to_string(),
+        "mariadb".to_string(),
+    ]
 }
 
 /// A permission rule
@@ -198,6 +209,11 @@ impl Config {
         }
 
         false
+    }
+
+    /// Check if a command name is a MySQL/MariaDB alias
+    pub fn is_mysql_alias(&self, name: &str) -> bool {
+        self.mysql_aliases.iter().any(|alias| alias == name)
     }
 
     /// Check a command against rules

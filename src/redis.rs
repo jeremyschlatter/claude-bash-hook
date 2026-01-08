@@ -1,4 +1,4 @@
-//! Redis command analysis for redis-cli
+//! Redis/Valkey command analysis for redis-cli and valkey-cli
 
 use crate::analyzer::Command;
 use crate::config::{Permission, PermissionResult};
@@ -90,9 +90,9 @@ fn is_read_only(redis_cmd: &str) -> bool {
     READ_ONLY_COMMANDS.iter().any(|c| *c == first_word)
 }
 
-/// Check if a redis-cli command is read-only
+/// Check if a redis-cli or valkey-cli command is read-only
 pub fn check_redis_cli(cmd: &Command) -> Option<PermissionResult> {
-    if cmd.name != "redis-cli" {
+    if cmd.name != "redis-cli" && cmd.name != "valkey-cli" {
         return None;
     }
 
@@ -125,6 +125,14 @@ mod tests {
             name: "redis-cli".to_string(),
             args: args.iter().map(|s| s.to_string()).collect(),
             text: format!("redis-cli {}", args.join(" ")),
+        }
+    }
+
+    fn make_valkey_cmd(args: &[&str]) -> Command {
+        Command {
+            name: "valkey-cli".to_string(),
+            args: args.iter().map(|s| s.to_string()).collect(),
+            text: format!("valkey-cli {}", args.join(" ")),
         }
     }
 
@@ -223,6 +231,29 @@ mod tests {
     #[test]
     fn test_scan_allowed() {
         let cmd = make_cmd(&["scan", "0", "match", "user:*"]);
+        let result = check_redis_cli(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    // Valkey-cli tests (same behavior as redis-cli)
+
+    #[test]
+    fn test_valkey_get_allowed() {
+        let cmd = make_valkey_cmd(&["get", "mykey"]);
+        let result = check_redis_cli(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_valkey_set_asks() {
+        let cmd = make_valkey_cmd(&["set", "mykey", "myvalue"]);
+        let result = check_redis_cli(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Ask);
+    }
+
+    #[test]
+    fn test_valkey_info_allowed() {
+        let cmd = make_valkey_cmd(&["-h", "localhost", "info"]);
         let result = check_redis_cli(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
