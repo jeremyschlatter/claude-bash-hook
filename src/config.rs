@@ -41,6 +41,10 @@ pub struct Config {
     #[serde(default)]
     pub enable_advice: bool,
 
+    /// Directories where git push to master/main is allowed
+    #[serde(default)]
+    pub master_push_allowed: Vec<String>,
+
     /// Command rules
     #[serde(default)]
     pub rules: Vec<Rule>,
@@ -145,6 +149,55 @@ impl Config {
     /// Get wrapper config by command name
     pub fn get_wrapper(&self, name: &str) -> Option<&WrapperConfig> {
         self.wrappers.iter().find(|w| w.command == name)
+    }
+
+    /// Check if a directory is allowed for git push to master/main
+    pub fn is_master_push_allowed(&self, cwd: Option<&str>) -> bool {
+        let Some(cwd) = cwd else {
+            return false;
+        };
+
+        // Canonicalize cwd for comparison
+        let cwd_path = std::path::Path::new(cwd);
+        let cwd_canonical = cwd_path
+            .canonicalize()
+            .unwrap_or_else(|_| cwd_path.to_path_buf());
+        let cwd_str = cwd_canonical.to_string_lossy();
+
+        for allowed in &self.master_push_allowed {
+            // Expand ~ to home directory
+            let expanded = if allowed.starts_with("~/") {
+                if let Ok(home) = std::env::var("HOME") {
+                    format!("{}{}", home, &allowed[1..])
+                } else {
+                    allowed.clone()
+                }
+            } else {
+                allowed.clone()
+            };
+
+            // Canonicalize allowed path
+            let allowed_path = std::path::Path::new(&expanded);
+            let allowed_canonical = allowed_path
+                .canonicalize()
+                .unwrap_or_else(|_| allowed_path.to_path_buf());
+            let allowed_str = allowed_canonical.to_string_lossy();
+
+            // Check exact match or subdirectory
+            if cwd_str == allowed_str {
+                return true;
+            }
+            let prefix = if allowed_str.ends_with('/') {
+                allowed_str.to_string()
+            } else {
+                format!("{}/", allowed_str)
+            };
+            if cwd_str.starts_with(&prefix) {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Check a command against rules

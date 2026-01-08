@@ -1,7 +1,7 @@
 //! Git command special handling
 
 use crate::analyzer::Command;
-use crate::config::{Permission, PermissionResult};
+use crate::config::{Config, Permission, PermissionResult};
 use std::process::Command as ProcessCommand;
 
 /// Protected branch names
@@ -40,7 +40,7 @@ pub fn check_git_checkout(cmd: &Command) -> Option<PermissionResult> {
 }
 
 /// Check if a git push should be allowed
-pub fn check_git_push(cmd: &Command) -> Option<PermissionResult> {
+pub fn check_git_push(cmd: &Command, config: &Config, cwd: Option<&str>) -> Option<PermissionResult> {
     // Only handle git push
     if cmd.name != "git" || cmd.args.first().map(|s| s.as_str()) != Some("push") {
         return None;
@@ -63,6 +63,15 @@ pub fn check_git_push(cmd: &Command) -> Option<PermissionResult> {
 
     if let Some(branch) = &target_branch {
         if PROTECTED_BRANCHES.contains(&branch.as_str()) {
+            // Check if this directory is allowed to push to master
+            if config.is_master_push_allowed(cwd) {
+                return Some(PermissionResult {
+                    permission: Permission::Allow,
+                    reason: format!("push to '{}' (allowed directory)", branch),
+                    suggestion: None,
+                });
+            }
+
             let reason = if has_force_with_lease {
                 format!("force push to protected branch '{}'", branch)
             } else {
@@ -150,10 +159,14 @@ mod tests {
         }
     }
 
+    fn default_config() -> Config {
+        Config::default()
+    }
+
     #[test]
     fn test_force_push_asks() {
         let cmd = make_cmd(&["push", "-f"]);
-        let result = check_git_push(&cmd).unwrap();
+        let result = check_git_push(&cmd, &default_config(), None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
         assert!(result.suggestion.is_some()); // suggests --force-with-lease
     }
@@ -161,50 +174,74 @@ mod tests {
     #[test]
     fn test_force_with_lease_to_feature_allows() {
         let cmd = make_cmd(&["push", "--force-with-lease", "origin", "feature-branch"]);
-        let result = check_git_push(&cmd).unwrap();
+        let result = check_git_push(&cmd, &default_config(), None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_force_with_lease_to_main_asks() {
         let cmd = make_cmd(&["push", "--force-with-lease", "origin", "main"]);
-        let result = check_git_push(&cmd).unwrap();
+        let result = check_git_push(&cmd, &default_config(), None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_push_to_master_asks() {
         let cmd = make_cmd(&["push", "origin", "master"]);
-        let result = check_git_push(&cmd).unwrap();
+        let result = check_git_push(&cmd, &default_config(), None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_push_to_main_asks() {
         let cmd = make_cmd(&["push", "origin", "main"]);
-        let result = check_git_push(&cmd).unwrap();
+        let result = check_git_push(&cmd, &default_config(), None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_push_to_feature_allows() {
         let cmd = make_cmd(&["push", "origin", "feature-branch"]);
-        let result = check_git_push(&cmd).unwrap();
+        let result = check_git_push(&cmd, &default_config(), None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_push_refspec_to_main_asks() {
         let cmd = make_cmd(&["push", "origin", "HEAD:main"]);
-        let result = check_git_push(&cmd).unwrap();
+        let result = check_git_push(&cmd, &default_config(), None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_non_push_returns_none() {
         let cmd = make_cmd(&["status"]);
-        let result = check_git_push(&cmd);
+        let result = check_git_push(&cmd, &default_config(), None);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_push_to_master_allowed_dir() {
+        let config_str = r#"
+            default = "passthrough"
+            master_push_allowed = ["/allowed/project"]
+        "#;
+        let config: Config = toml::from_str(config_str).unwrap();
+        let cmd = make_cmd(&["push", "origin", "master"]);
+        let result = check_git_push(&cmd, &config, Some("/allowed/project")).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_push_to_master_not_allowed_dir() {
+        let config_str = r#"
+            default = "passthrough"
+            master_push_allowed = ["/allowed/project"]
+        "#;
+        let config: Config = toml::from_str(config_str).unwrap();
+        let cmd = make_cmd(&["push", "origin", "master"]);
+        let result = check_git_push(&cmd, &config, Some("/other/project")).unwrap();
+        assert_eq!(result.permission, Permission::Ask);
     }
 
     // Git checkout tests

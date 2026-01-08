@@ -430,7 +430,7 @@ fn check_single_command(
 
     // Special handling for git push - check target branch
     if cmd.name == "git" && cmd.args.first().map(|s| s.as_str()) == Some("push") {
-        if let Some(result) = git::check_git_push(cmd) {
+        if let Some(result) = git::check_git_push(cmd, config, initial_cwd) {
             return result;
         }
     }
