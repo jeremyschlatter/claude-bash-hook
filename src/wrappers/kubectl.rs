@@ -1,11 +1,12 @@
-//! kubectl exec wrapper handling
+//! kubectl exec/debug wrapper handling
 
 use crate::analyzer::Command;
 use crate::wrappers::UnwrapResult;
 
-/// Unwrap kubectl exec command
+/// Unwrap kubectl exec or debug command
 pub fn unwrap(cmd: &Command) -> Option<UnwrapResult> {
-    if cmd.args.first().map(|s| s.as_str()) != Some("exec") {
+    let subcommand = cmd.args.first().map(|s| s.as_str())?;
+    if subcommand != "exec" && subcommand != "debug" {
         return None;
     }
 
@@ -26,7 +27,7 @@ pub fn unwrap(cmd: &Command) -> Option<UnwrapResult> {
     Some(UnwrapResult {
         inner_command,
         host: None,
-        wrapper: "kubectl exec".to_string(),
+        wrapper: format!("kubectl {}", subcommand),
     })
 }
 
@@ -82,6 +83,37 @@ mod tests {
     #[test]
     fn test_kubectl_exec_no_separator() {
         let cmd = make_cmd(&["exec", "mypod"]);
+        let result = unwrap(&cmd).unwrap();
+        assert_eq!(result.inner_command, None);
+    }
+
+    #[test]
+    fn test_kubectl_debug_simple() {
+        let cmd = make_cmd(&["debug", "mypod", "--", "sh"]);
+        let result = unwrap(&cmd).unwrap();
+        assert_eq!(result.inner_command, Some("sh".to_string()));
+        assert_eq!(result.wrapper, "kubectl debug");
+    }
+
+    #[test]
+    fn test_kubectl_debug_with_image() {
+        let cmd = make_cmd(&[
+            "debug",
+            "-it",
+            "mypod",
+            "--image=busybox",
+            "--",
+            "cat",
+            "/etc/hosts",
+        ]);
+        let result = unwrap(&cmd).unwrap();
+        assert_eq!(result.inner_command, Some("cat /etc/hosts".to_string()));
+        assert_eq!(result.wrapper, "kubectl debug");
+    }
+
+    #[test]
+    fn test_kubectl_debug_no_separator() {
+        let cmd = make_cmd(&["debug", "mypod", "--image=busybox"]);
         let result = unwrap(&cmd).unwrap();
         assert_eq!(result.inner_command, None);
     }
