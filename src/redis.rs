@@ -36,8 +36,16 @@ const READ_ONLY_COMMANDS: &[&str] = &[
     "ECHO", "PING", "QUIT",
 ];
 
+/// Parsed Redis command with command name and arguments
+struct RedisCommand {
+    /// The Redis command (e.g., "GET", "CONFIG GET")
+    command: String,
+    /// Number of arguments after the command
+    arg_count: usize,
+}
+
 /// Extract the Redis command from redis-cli arguments
-fn extract_redis_command(cmd: &Command) -> Option<String> {
+fn extract_redis_command(cmd: &Command) -> Option<RedisCommand> {
     // Skip options to find the command
     // Common options: -h host, -p port, -n db, -a password, -u uri, --user, --pass, etc.
     let opts_with_args = [
@@ -67,13 +75,22 @@ fn extract_redis_command(cmd: &Command) -> Option<String> {
     }
 
     // Build command string (first 1-2 parts for compound commands like CONFIG GET)
-    let redis_cmd = if command_parts.len() >= 2 {
-        format!("{} {}", command_parts[0], command_parts[1])
+    let (redis_cmd, arg_count) = if command_parts.len() >= 2 {
+        // Check if this is a compound command (like CONFIG GET)
+        let potential_compound = format!("{} {}", command_parts[0], command_parts[1]).to_uppercase();
+        if READ_ONLY_COMMANDS.iter().any(|c| *c == potential_compound) {
+            (potential_compound, command_parts.len() - 2)
+        } else {
+            (command_parts[0].to_uppercase(), command_parts.len() - 1)
+        }
     } else {
-        command_parts[0].to_string()
+        (command_parts[0].to_uppercase(), 0)
     };
 
-    Some(redis_cmd)
+    Some(RedisCommand {
+        command: redis_cmd,
+        arg_count,
+    })
 }
 
 /// Check if a Redis command is read-only
@@ -99,18 +116,29 @@ pub fn check_redis_cli(cmd: &Command) -> Option<PermissionResult> {
     let redis_cmd = extract_redis_command(cmd)?;
 
     // Extract just the command name (first word) for display
-    let cmd_name = redis_cmd.split_whitespace().next().unwrap_or(&redis_cmd);
+    let cmd_name = redis_cmd
+        .command
+        .split_whitespace()
+        .next()
+        .unwrap_or(&redis_cmd.command);
 
-    if is_read_only(&redis_cmd) {
+    if is_read_only(&redis_cmd.command) {
         Some(PermissionResult {
             permission: Permission::Allow,
-            reason: format!("read-only Redis command: {}", cmd_name.to_uppercase()),
+            reason: format!("read-only Redis command: {}", cmd_name),
+            suggestion: None,
+        })
+    } else if redis_cmd.command == "DEL" && redis_cmd.arg_count == 1 {
+        // Allow single-key deletes (common cache invalidation)
+        Some(PermissionResult {
+            permission: Permission::Allow,
+            reason: "single-key DEL (cache invalidation)".to_string(),
             suggestion: None,
         })
     } else {
         Some(PermissionResult {
             permission: Permission::Ask,
-            reason: format!("Redis write command: {}", cmd_name.to_uppercase()),
+            reason: format!("Redis write command: {}", cmd_name),
             suggestion: None,
         })
     }
@@ -180,8 +208,16 @@ mod tests {
     }
 
     #[test]
-    fn test_del_asks() {
+    fn test_del_single_key_allowed() {
         let cmd = make_cmd(&["del", "mykey"]);
+        let result = check_redis_cli(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+        assert!(result.reason.contains("single-key DEL"));
+    }
+
+    #[test]
+    fn test_del_multi_key_asks() {
+        let cmd = make_cmd(&["del", "key1", "key2"]);
         let result = check_redis_cli(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
