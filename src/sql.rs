@@ -125,6 +125,11 @@ pub fn check_mysql_query(cmd: &Command) -> Option<PermissionResult> {
     Some(check_query_readonly(&strip_quotes(&query)))
 }
 
+/// Check if a raw SQL query string is read-only (for piped queries)
+pub fn check_piped_query(query: &str) -> PermissionResult {
+    check_query_readonly(&strip_quotes(query))
+}
+
 /// Check if a sqlite3 command has a read-only query
 pub fn check_sqlite3_query(cmd: &Command) -> Option<PermissionResult> {
     let query = extract_sqlite3_query(cmd)?;

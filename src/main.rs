@@ -234,6 +234,17 @@ fn analyze_command(
     edit_mode: bool,
     initial_cwd: Option<&str>,
 ) -> PermissionResult {
+    analyze_command_with_piped_query(command, config, edit_mode, initial_cwd, None)
+}
+
+/// Analyze a bash command with optional piped query context
+fn analyze_command_with_piped_query(
+    command: &str,
+    config: &Config,
+    edit_mode: bool,
+    initial_cwd: Option<&str>,
+    outer_piped_query: Option<&str>,
+) -> PermissionResult {
     let analysis = analyzer::analyze(command);
 
     if !analysis.success {
@@ -265,8 +276,14 @@ fn analyze_command(
 
     // Check each command and return the most restrictive result
     let mut most_restrictive: Option<PermissionResult> = None;
+    let mut prev_cmd: Option<&analyzer::Command> = None;
 
     for cmd in &analysis.commands {
+        // Check for piped query: echo 'SQL' | mysql (or any command that might wrap mysql)
+        // Use local piped query if detected, otherwise use outer piped query
+        let local_piped_query = extract_piped_query(prev_cmd);
+        let piped_query = local_piped_query.as_deref().or(outer_piped_query);
+
         let result = check_single_command(
             cmd,
             config,
@@ -274,6 +291,7 @@ fn analyze_command(
             virtual_cwd.as_deref(),
             initial_cwd,
             has_uncertain_flow,
+            piped_query,
         );
 
         most_restrictive = Some(match most_restrictive {
@@ -289,6 +307,8 @@ fn analyze_command(
                 virtual_cwd = Some(dir.clone());
             }
         }
+
+        prev_cmd = Some(cmd);
     }
 
     most_restrictive.unwrap_or_else(|| PermissionResult {
@@ -332,7 +352,8 @@ fn analyze_nushell_command(
 
     for cmd in &analysis.commands {
         // For nushell, cwd is both virtual and initial (no cd tracking)
-        let result = check_single_command(cmd, config, edit_mode, cwd, cwd, false);
+        // No piped query support for nushell (different piping semantics)
+        let result = check_single_command(cmd, config, edit_mode, cwd, cwd, false, None);
 
         most_restrictive = Some(match most_restrictive {
             None => result,
@@ -348,6 +369,26 @@ fn analyze_nushell_command(
     })
 }
 
+/// Extract a SQL query from a piped echo command
+/// Returns Some(query) if prev_cmd is `echo 'SQL'`
+/// The query is extracted regardless of the current command type,
+/// so it can propagate through wrappers (ssh, docker exec, etc.)
+fn extract_piped_query(prev_cmd: Option<&analyzer::Command>) -> Option<String> {
+    // Check if previous command is echo
+    let prev = prev_cmd?;
+    if prev.name != "echo" && prev.name != "printf" {
+        return None;
+    }
+
+    // Extract the query from echo arguments
+    // Join all args (echo may have multiple args)
+    if prev.args.is_empty() {
+        return None;
+    }
+
+    Some(prev.args.join(" "))
+}
+
 /// Check a single command, handling wrappers recursively
 fn check_single_command(
     cmd: &analyzer::Command,
@@ -356,12 +397,15 @@ fn check_single_command(
     virtual_cwd: Option<&str>,
     initial_cwd: Option<&str>,
     has_uncertain_flow: bool,
+    piped_query: Option<&str>,
 ) -> PermissionResult {
     // Check if this is a wrapper command
     if let Some(unwrap_result) = wrappers::unwrap_command(cmd, config) {
         // If there's an inner command, recursively analyze it
+        // Pass piped_query so it can reach nested mysql commands
         if let Some(ref inner) = unwrap_result.inner_command {
-            let inner_result = analyze_command(inner, config, edit_mode, virtual_cwd);
+            let inner_result =
+                analyze_command_with_piped_query(inner, config, edit_mode, virtual_cwd, piped_query);
 
             // For SSH with host, check host rules too
             if unwrap_result.host.is_some() {
@@ -401,8 +445,13 @@ fn check_single_command(
 
     // Special handling for mysql/mariadb - allow read-only queries
     if config.is_mysql_alias(&cmd.name) {
+        // First check -e flag query
         if let Some(result) = sql::check_mysql_query(cmd) {
             return result;
+        }
+        // Then check piped query (from echo 'SQL' | mysql)
+        if let Some(query) = piped_query {
+            return sql::check_piped_query(query);
         }
     }
 
@@ -791,5 +840,80 @@ mod tests {
         let config = test_config();
         let result = analyze_command("cd / && rm /tmp/test", &config, false, Some("/"));
         assert_eq!(result.permission, Permission::Allow);
+    }
+
+    // Piped query tests (echo 'SQL' | mysql)
+
+    #[test]
+    fn test_piped_select_allowed() {
+        let config = test_config();
+        let result = analyze_command("echo 'SELECT * FROM users' | mysql", &config, false, None);
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_piped_insert_asks() {
+        let config = test_config();
+        let result = analyze_command("echo 'INSERT INTO users VALUES (1)' | mysql", &config, false, None);
+        assert_eq!(result.permission, Permission::Ask);
+    }
+
+    #[test]
+    fn test_piped_show_allowed() {
+        let config = test_config();
+        let result = analyze_command("echo 'SHOW DATABASES' | mariadb", &config, false, None);
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_piped_through_ssh_select_allowed() {
+        let config = test_config();
+        // Piped query through ssh wrapper
+        let result = analyze_command(
+            "echo 'SELECT 1' | ssh host 'mariadb -u user db'",
+            &config,
+            false,
+            None,
+        );
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_piped_through_docker_exec_select_allowed() {
+        let config = test_config();
+        // Piped query through docker exec wrapper
+        let result = analyze_command(
+            "echo 'SELECT 1' | docker exec -i container mariadb",
+            &config,
+            false,
+            None,
+        );
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_piped_through_ssh_docker_select_allowed() {
+        let config = test_config();
+        // Piped query through nested wrappers: ssh -> docker exec -> mariadb
+        let result = analyze_command(
+            "echo 'SELECT 1' | ssh host 'docker exec -i container mariadb'",
+            &config,
+            false,
+            None,
+        );
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_piped_through_ssh_insert_asks() {
+        let config = test_config();
+        // Piped write query through ssh should ask
+        let result = analyze_command(
+            "echo 'INSERT INTO t VALUES (1)' | ssh host 'mariadb db'",
+            &config,
+            false,
+            None,
+        );
+        assert_eq!(result.permission, Permission::Ask);
     }
 }

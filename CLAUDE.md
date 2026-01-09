@@ -22,13 +22,11 @@ PreToolUse hook for Claude Code that provides granular permission control over B
 
 ## Build
 
-Uses musl target for static linking:
-
 ```bash
-cargo build --release --target x86_64-unknown-linux-musl
+cargo build --release
 ```
 
-Binary: `target/x86_64-unknown-linux-musl/release/claude-bash-hook`
+Binary: `target/release/claude-bash-hook`
 
 Symlinked to: `/home/osso/bin/claude-bash-hook`
 
