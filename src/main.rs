@@ -11,6 +11,7 @@ mod git;
 mod nushell;
 mod redis;
 mod rm;
+mod scripts;
 mod sql;
 mod tar;
 mod tee;
@@ -465,6 +466,13 @@ fn check_single_command(
     // Special handling for redis-cli/valkey-cli - allow read-only commands
     if cmd.name == "redis-cli" || cmd.name == "valkey-cli" {
         if let Some(result) = redis::check_redis_cli(cmd) {
+            return result;
+        }
+    }
+
+    // Special handling for php -r - allow read-only scripts
+    if cmd.name == "php" {
+        if let Some(result) = scripts::php::check_php_script(cmd) {
             return result;
         }
     }
