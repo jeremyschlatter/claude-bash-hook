@@ -114,6 +114,38 @@ const READONLY_FUNCTIONS: &[&str] = &[
     // Serialization
     "serialize",
     "unserialize",
+    // File reading (read-only)
+    "file_get_contents",
+    "file",
+    "readfile",
+    // Encoding
+    "base64_decode",
+    "base64_encode",
+    "urlencode",
+    "urldecode",
+    "rawurlencode",
+    "rawurldecode",
+    "http_build_query",
+    // More array functions
+    "array_keys",
+    "array_unique",
+    "array_reverse",
+    "array_flip",
+    "array_slice",
+    "array_chunk",
+    "array_combine",
+    "array_diff",
+    "array_intersect",
+    "sort",
+    "rsort",
+    "asort",
+    "arsort",
+    "ksort",
+    "krsort",
+    "usort",
+    "uasort",
+    "uksort",
+    "array_multisort",
 ];
 
 /// Extract PHP code from php -r command
