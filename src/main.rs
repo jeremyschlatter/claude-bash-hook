@@ -477,6 +477,13 @@ fn check_single_command(
         }
     }
 
+    // Special handling for python -c - allow read-only scripts
+    if cmd.name.starts_with("python") {
+        if let Some(result) = scripts::python::check_python_script(cmd) {
+            return result;
+        }
+    }
+
     // Special handling for git push - check target branch
     if cmd.name == "git" && cmd.args.first().map(|s| s.as_str()) == Some("push") {
         if let Some(result) = git::check_git_push(cmd, config, initial_cwd) {
