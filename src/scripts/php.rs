@@ -105,6 +105,15 @@ const READONLY_FUNCTIONS: &[&str] = &[
     "dirname",
     "pathinfo",
     "realpath",
+    // Streams (read-only)
+    "stream_get_contents",
+    "fgets",
+    "fread",
+    "fgetc",
+    "feof",
+    // Serialization
+    "serialize",
+    "unserialize",
 ];
 
 /// Extract PHP code from php -r command
