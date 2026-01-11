@@ -566,7 +566,18 @@ fn check_single_command(
         };
     }
 
-    // Regular command - check against rules (use initial_cwd for project-based rules)
+    // Regular command - check against rules
+    // Try virtual_cwd first (from cd commands), then fall back to initial_cwd
+    // This allows "cd /project && ./script" to match cwd-restricted rules
+    if virtual_cwd.is_some() && virtual_cwd != initial_cwd {
+        let result = config.check_command_with_cwd(&cmd.name, &cmd.args, virtual_cwd);
+        // If virtual_cwd matched an allow rule, use it
+        if result.permission == Permission::Allow {
+            return result;
+        }
+    }
+
+    // Fall back to initial_cwd
     config.check_command_with_cwd(&cmd.name, &cmd.args, initial_cwd)
 }
 
