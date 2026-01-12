@@ -67,10 +67,7 @@ fn default_permission() -> String {
 }
 
 fn default_mysql_aliases() -> Vec<String> {
-    vec![
-        "mysql".to_string(),
-        "mariadb".to_string(),
-    ]
+    vec!["mysql".to_string(), "mariadb".to_string()]
 }
 
 /// A permission rule
@@ -354,11 +351,7 @@ impl Config {
         let cmd_absolute = if name_normalized.starts_with('/') {
             name_normalized.to_string()
         } else {
-            format!(
-                "{}/{}",
-                cwd.trim_end_matches('/'),
-                name_normalized
-            )
+            format!("{}/{}", cwd.trim_end_matches('/'), name_normalized)
         };
 
         let pattern_absolute = if pattern_cmd_normalized.starts_with('/') {
@@ -970,8 +963,7 @@ mod tests {
 
         // Case 4: exact cwd, cmd is ./custom-cli (wrong path)
         // Resolves to /home/user/project/custom-cli != /home/user/project/bin/custom-cli -> no match
-        let result =
-            config.check_command_with_cwd("./custom-cli", &[], Some("/home/user/project"));
+        let result = config.check_command_with_cwd("./custom-cli", &[], Some("/home/user/project"));
         assert_eq!(result.permission, Permission::Ask);
 
         // Case 5: parent cwd (not under rule_cwd) -> no match
@@ -1025,8 +1017,7 @@ mod tests {
         let config: Config = toml::from_str(toml).unwrap();
 
         // sentry -s gc projects should match "sentry projects"
-        let result =
-            config.check_command("sentry", &["-s".into(), "gc".into(), "projects".into()]);
+        let result = config.check_command("sentry", &["-s".into(), "gc".into(), "projects".into()]);
         assert_eq!(result.permission, Permission::Allow);
     }
 }

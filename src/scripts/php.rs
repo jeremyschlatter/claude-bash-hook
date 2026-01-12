@@ -204,9 +204,23 @@ fn is_readonly_php(code: &str) -> bool {
         // Check if followed by ( - this is a function call
         if i < bytes.len() && bytes[i] == b'(' {
             // Check if this function is in our allowlist
-            if !READONLY_FUNCTIONS.iter().any(|f| f.eq_ignore_ascii_case(word)) {
+            if !READONLY_FUNCTIONS
+                .iter()
+                .any(|f| f.eq_ignore_ascii_case(word))
+            {
                 // Also allow PHP language constructs that look like functions
-                if !matches!(word, "if" | "else" | "elseif" | "while" | "for" | "foreach" | "switch" | "case" | "array" | "list") {
+                if !matches!(
+                    word,
+                    "if" | "else"
+                        | "elseif"
+                        | "while"
+                        | "for"
+                        | "foreach"
+                        | "switch"
+                        | "case"
+                        | "array"
+                        | "list"
+                ) {
                     return false;
                 }
             }
@@ -296,7 +310,10 @@ mod tests {
 
     #[test]
     fn test_complex_readonly_allowed() {
-        let cmd = make_cmd(&["-r", "echo json_encode(['version' => phpversion(), 'extensions' => get_loaded_extensions()]);"]);
+        let cmd = make_cmd(&[
+            "-r",
+            "echo json_encode(['version' => phpversion(), 'extensions' => get_loaded_extensions()]);",
+        ]);
         let result = check_php_script(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }

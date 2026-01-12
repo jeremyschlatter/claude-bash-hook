@@ -148,10 +148,7 @@ pub fn check_curl(cmd: &Command, config: &Config) -> Option<PermissionResult> {
     }
 
     // Extract hosts from URLs
-    let hosts: Vec<String> = urls
-        .iter()
-        .filter_map(|url| extract_host(url))
-        .collect();
+    let hosts: Vec<String> = urls.iter().filter_map(|url| extract_host(url)).collect();
 
     if hosts.is_empty() {
         return None;

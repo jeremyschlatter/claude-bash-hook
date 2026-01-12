@@ -40,7 +40,11 @@ pub fn check_git_checkout(cmd: &Command) -> Option<PermissionResult> {
 }
 
 /// Check if a git push should be allowed
-pub fn check_git_push(cmd: &Command, config: &Config, cwd: Option<&str>) -> Option<PermissionResult> {
+pub fn check_git_push(
+    cmd: &Command,
+    config: &Config,
+    cwd: Option<&str>,
+) -> Option<PermissionResult> {
     // Only handle git push
     if cmd.name != "git" || cmd.args.first().map(|s| s.as_str()) != Some("push") {
         return None;

@@ -6,34 +6,104 @@ use crate::config::{Permission, PermissionResult};
 /// Read-only Redis commands (case-insensitive)
 const READ_ONLY_COMMANDS: &[&str] = &[
     // String
-    "GET", "MGET", "STRLEN", "GETRANGE", "GETEX",
+    "GET",
+    "MGET",
+    "STRLEN",
+    "GETRANGE",
+    "GETEX",
     // List
-    "LLEN", "LRANGE", "LINDEX", "LPOS",
+    "LLEN",
+    "LRANGE",
+    "LINDEX",
+    "LPOS",
     // Hash
-    "HGET", "HGETALL", "HMGET", "HKEYS", "HVALS", "HLEN", "HEXISTS", "HSCAN", "HSTRLEN",
+    "HGET",
+    "HGETALL",
+    "HMGET",
+    "HKEYS",
+    "HVALS",
+    "HLEN",
+    "HEXISTS",
+    "HSCAN",
+    "HSTRLEN",
     // Set
-    "SCARD", "SMEMBERS", "SISMEMBER", "SMISMEMBER", "SRANDMEMBER", "SSCAN", "SDIFF", "SINTER", "SUNION",
+    "SCARD",
+    "SMEMBERS",
+    "SISMEMBER",
+    "SMISMEMBER",
+    "SRANDMEMBER",
+    "SSCAN",
+    "SDIFF",
+    "SINTER",
+    "SUNION",
     // Sorted Set
-    "ZCARD", "ZRANGE", "ZRANGEBYSCORE", "ZRANGEBYLEX", "ZCOUNT", "ZSCORE", "ZRANK", "ZREVRANK",
-    "ZREVRANGE", "ZREVRANGEBYSCORE", "ZLEXCOUNT", "ZMSCORE", "ZSCAN", "ZRANDMEMBER",
+    "ZCARD",
+    "ZRANGE",
+    "ZRANGEBYSCORE",
+    "ZRANGEBYLEX",
+    "ZCOUNT",
+    "ZSCORE",
+    "ZRANK",
+    "ZREVRANK",
+    "ZREVRANGE",
+    "ZREVRANGEBYSCORE",
+    "ZLEXCOUNT",
+    "ZMSCORE",
+    "ZSCAN",
+    "ZRANDMEMBER",
     // Key
-    "EXISTS", "TYPE", "TTL", "PTTL", "OBJECT", "SCAN", "KEYS", "RANDOMKEY", "DUMP",
-    "TOUCH", "EXPIRETIME", "PEXPIRETIME",
+    "EXISTS",
+    "TYPE",
+    "TTL",
+    "PTTL",
+    "OBJECT",
+    "SCAN",
+    "KEYS",
+    "RANDOMKEY",
+    "DUMP",
+    "TOUCH",
+    "EXPIRETIME",
+    "PEXPIRETIME",
     // Server/Info
-    "INFO", "DBSIZE", "TIME", "LASTSAVE", "DEBUG", "MEMORY", "CLIENT",
-    "CONFIG GET", "SLOWLOG GET", "COMMAND", "COMMAND COUNT", "COMMAND INFO",
+    "INFO",
+    "DBSIZE",
+    "TIME",
+    "LASTSAVE",
+    "DEBUG",
+    "MEMORY",
+    "CLIENT",
+    "CONFIG GET",
+    "SLOWLOG GET",
+    "COMMAND",
+    "COMMAND COUNT",
+    "COMMAND INFO",
     // Stream (read)
-    "XLEN", "XRANGE", "XREVRANGE", "XREAD", "XINFO", "XPENDING",
+    "XLEN",
+    "XRANGE",
+    "XREVRANGE",
+    "XREAD",
+    "XINFO",
+    "XPENDING",
     // Pub/Sub (read)
     "PUBSUB",
     // Geo
-    "GEOPOS", "GEODIST", "GEOHASH", "GEORADIUS", "GEORADIUSBYMEMBER", "GEOSEARCH",
+    "GEOPOS",
+    "GEODIST",
+    "GEOHASH",
+    "GEORADIUS",
+    "GEORADIUSBYMEMBER",
+    "GEOSEARCH",
     // HyperLogLog (read)
     "PFCOUNT",
     // Cluster (read)
-    "CLUSTER INFO", "CLUSTER NODES", "CLUSTER SLOTS", "CLUSTER KEYSLOT",
+    "CLUSTER INFO",
+    "CLUSTER NODES",
+    "CLUSTER SLOTS",
+    "CLUSTER KEYSLOT",
     // Misc
-    "ECHO", "PING", "QUIT",
+    "ECHO",
+    "PING",
+    "QUIT",
 ];
 
 /// Parsed Redis command with command name and arguments
@@ -49,8 +119,20 @@ fn extract_redis_command(cmd: &Command) -> Option<RedisCommand> {
     // Skip options to find the command
     // Common options: -h host, -p port, -n db, -a password, -u uri, --user, --pass, etc.
     let opts_with_args = [
-        "-h", "-p", "-n", "-a", "-u", "--user", "--pass", "--askpass",
-        "-c", "--cluster", "--tls-ciphers", "--tls-ca-cert", "--tls-cert", "--tls-key",
+        "-h",
+        "-p",
+        "-n",
+        "-a",
+        "-u",
+        "--user",
+        "--pass",
+        "--askpass",
+        "-c",
+        "--cluster",
+        "--tls-ciphers",
+        "--tls-ca-cert",
+        "--tls-cert",
+        "--tls-key",
     ];
 
     let mut iter = cmd.args.iter().peekable();
@@ -77,7 +159,8 @@ fn extract_redis_command(cmd: &Command) -> Option<RedisCommand> {
     // Build command string (first 1-2 parts for compound commands like CONFIG GET)
     let (redis_cmd, arg_count) = if command_parts.len() >= 2 {
         // Check if this is a compound command (like CONFIG GET)
-        let potential_compound = format!("{} {}", command_parts[0], command_parts[1]).to_uppercase();
+        let potential_compound =
+            format!("{} {}", command_parts[0], command_parts[1]).to_uppercase();
         if READ_ONLY_COMMANDS.iter().any(|c| *c == potential_compound) {
             (potential_compound, command_parts.len() - 2)
         } else {
@@ -169,7 +252,11 @@ mod tests {
         let cmd = make_cmd(&["-n", "1", "llen", "rq:queue:TaskTrackPageView"]);
         let result = check_redis_cli(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
-        assert!(result.reason.contains("read-only"), "reason should contain 'read-only': {}", result.reason);
+        assert!(
+            result.reason.contains("read-only"),
+            "reason should contain 'read-only': {}",
+            result.reason
+        );
     }
 
     #[test]

@@ -18,7 +18,7 @@ const DANGEROUS_PATTERNS: &[&str] = &[
     "compile(",
     "__import__",
     // File writing
-    "open(",  // We'll check for write modes separately
+    "open(", // We'll check for write modes separately
     "file(",
     // File operations
     "os.remove",
@@ -100,12 +100,19 @@ fn has_write_open(code: &str) -> bool {
             let args = &after_open[..close];
             // Check for write modes: 'w', 'a', 'x', 'r+', 'w+', 'a+'
             // But not just 'r' or 'rb'
-            if args.contains("'w") || args.contains("\"w") ||
-               args.contains("'a") || args.contains("\"a") ||
-               args.contains("'x") || args.contains("\"x") ||
-               args.contains("'+") || args.contains("\"+") ||
-               args.contains("mode='w") || args.contains("mode=\"w") ||
-               args.contains("mode='a") || args.contains("mode=\"a") {
+            if args.contains("'w")
+                || args.contains("\"w")
+                || args.contains("'a")
+                || args.contains("\"a")
+                || args.contains("'x")
+                || args.contains("\"x")
+                || args.contains("'+")
+                || args.contains("\"+")
+                || args.contains("mode='w")
+                || args.contains("mode=\"w")
+                || args.contains("mode='a")
+                || args.contains("mode=\"a")
+            {
                 return true;
             }
         }
@@ -185,7 +192,10 @@ mod tests {
 
     #[test]
     fn test_json_loads_allowed() {
-        let cmd = make_cmd("python3", &["-c", "import json; print(json.loads('{\"a\": 1}'))"]);
+        let cmd = make_cmd(
+            "python3",
+            &["-c", "import json; print(json.loads('{\"a\": 1}'))"],
+        );
         let result = check_python_script(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
@@ -199,14 +209,20 @@ mod tests {
 
     #[test]
     fn test_base64_allowed() {
-        let cmd = make_cmd("python3", &["-c", "import base64; print(base64.b64decode('aGVsbG8='))"]);
+        let cmd = make_cmd(
+            "python3",
+            &["-c", "import base64; print(base64.b64decode('aGVsbG8='))"],
+        );
         let result = check_python_script(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_os_path_allowed() {
-        let cmd = make_cmd("python3", &["-c", "import os.path; print(os.path.basename('/tmp/foo'))"]);
+        let cmd = make_cmd(
+            "python3",
+            &["-c", "import os.path; print(os.path.basename('/tmp/foo'))"],
+        );
         let result = check_python_script(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
@@ -241,7 +257,10 @@ mod tests {
 
     #[test]
     fn test_subprocess_asks() {
-        let cmd = make_cmd("python3", &["-c", "import subprocess; subprocess.run(['ls'])"]);
+        let cmd = make_cmd(
+            "python3",
+            &["-c", "import subprocess; subprocess.run(['ls'])"],
+        );
         let result = check_python_script(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
@@ -283,7 +302,10 @@ mod tests {
 
     #[test]
     fn test_requests_asks() {
-        let cmd = make_cmd("python3", &["-c", "import requests; requests.get('http://example.com')"]);
+        let cmd = make_cmd(
+            "python3",
+            &["-c", "import requests; requests.get('http://example.com')"],
+        );
         let result = check_python_script(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
@@ -308,7 +330,13 @@ mod tests {
 
     #[test]
     fn test_complex_readonly_allowed() {
-        let cmd = make_cmd("python3", &["-c", "import json, sys; data = json.loads(sys.stdin.read()); print(len(data))"]);
+        let cmd = make_cmd(
+            "python3",
+            &[
+                "-c",
+                "import json, sys; data = json.loads(sys.stdin.read()); print(len(data))",
+            ],
+        );
         let result = check_python_script(&cmd).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }

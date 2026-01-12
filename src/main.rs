@@ -901,7 +901,12 @@ mod tests {
     #[test]
     fn test_piped_insert_asks() {
         let config = test_config();
-        let result = analyze_command("echo 'INSERT INTO users VALUES (1)' | mysql", &config, false, None);
+        let result = analyze_command(
+            "echo 'INSERT INTO users VALUES (1)' | mysql",
+            &config,
+            false,
+            None,
+        );
         assert_eq!(result.permission, Permission::Ask);
     }
 
