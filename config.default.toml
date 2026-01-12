@@ -90,27 +90,6 @@ commands = [
 permission = "allow"
 reason = "kubectl read-only and safe operations"
 
-# UniFi read-only (all current subcommands)
-[[rules]]
-commands = [
-    "unifi internet", "unifi devices", "unifi networks", "unifi clients",
-    "unifi wifi", "unifi firewall", "unifi security", "unifi vpn", "unifi config", "unifi dns",
-]
-permission = "allow"
-reason = "unifi read-only"
-
-# Sentry read-only
-[[rules]]
-commands = ["sentry issue", "sentry projects", "sentry issues"]
-permission = "allow"
-reason = "sentry read-only"
-
-# jira read-only
-[[rules]]
-commands = ["jira issue view", "jira issue list", "jira project list", "jira sprint list", "jira board list"]
-permission = "allow"
-reason = "jira read-only"
-
 # glab read-only and safe operations
 [[rules]]
 commands = [
@@ -215,24 +194,6 @@ reason = "terminal remote control"
 commands = ["terraform show", "terraform state list", "terraform state show", "terraform output", "terraform plan", "terraform version", "terraform providers", "terraform validate"]
 permission = "allow"
 reason = "terraform read-only"
-
-# gmail read-only
-[[rules]]
-commands = ["gmail list", "gmail labels"]
-permission = "allow"
-reason = "gmail read-only"
-
-# gitlab read-only
-[[rules]]
-commands = ["gitlab mr list", "gitlab mr show", "gitlab ci status", "gitlab ci logs"]
-permission = "allow"
-reason = "gitlab read-only"
-
-# slack read-only
-[[rules]]
-commands = ["slack channels", "slack channel", "slack messages", "slack dms", "slack users", "slack search", "slack config"]
-permission = "allow"
-reason = "slack read-only"
 
 # cargo dev commands
 [[rules]]

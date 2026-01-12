@@ -95,12 +95,12 @@ fn output_decision(decision: &str, reason: &str) {
 }
 
 fn main() {
-    // Initialize journald logging
-    systemd_journal_logger::JournalLog::new()
-        .unwrap()
-        .with_syslog_identifier("claude-bash-hook".to_string())
-        .install()
-        .ok();
+    // Initialize journald logging (fails gracefully on non-systemd systems)
+    if let Ok(logger) = systemd_journal_logger::JournalLog::new() {
+        let _ = logger
+            .with_syslog_identifier("claude-bash-hook".to_string())
+            .install();
+    }
     log::set_max_level(log::LevelFilter::Info);
     // Read input from stdin
     let mut input = String::new();

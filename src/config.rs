@@ -213,11 +213,6 @@ impl Config {
         self.mysql_aliases.iter().any(|alias| alias == name)
     }
 
-    /// Check a command against rules
-    pub fn check_command(&self, name: &str, args: &[String]) -> PermissionResult {
-        self.check_command_with_cwd(name, args, None)
-    }
-
     /// Check a command against rules with an optional cwd override
     pub fn check_command_with_cwd(
         &self,
@@ -710,6 +705,17 @@ impl Default for Config {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    /// Test helper trait to add convenience methods
+    trait ConfigTestExt {
+        fn check_command(&self, name: &str, args: &[String]) -> PermissionResult;
+    }
+
+    impl ConfigTestExt for Config {
+        fn check_command(&self, name: &str, args: &[String]) -> PermissionResult {
+            self.check_command_with_cwd(name, args, None)
+        }
+    }
 
     fn test_config() -> Config {
         Config::load(Path::new("config.default.toml")).expect("Failed to load test config")

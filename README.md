@@ -29,7 +29,7 @@ cp target/release/claude-bash-hook ~/.local/bin/
 
 ```bash
 mkdir -p ~/.config/claude-bash-hook
-cp config.example.toml ~/.config/claude-bash-hook/config.toml
+cp config.default.toml ~/.config/claude-bash-hook/config.toml
 ```
 
 Edit `config.toml` to match your workflow. The example config has sensible defaults.
