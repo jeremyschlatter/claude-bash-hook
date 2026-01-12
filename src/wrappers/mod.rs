@@ -42,7 +42,7 @@ pub fn unwrap_command(cmd: &Command, config: &Config) -> Option<UnwrapResult> {
         "timeout" => return timeout::unwrap(cmd),
         "kitty-remote" | "wezterm-remote" => return terminal_remote::unwrap(cmd),
         "xargs" => return xargs::unwrap(cmd),
-        "sh" | "bash" | "zsh" => return shell::unwrap(cmd),
+        "sh" | "bash" | "zsh" | "fish" | "nu" => return shell::unwrap(cmd),
         _ => {}
     }
 

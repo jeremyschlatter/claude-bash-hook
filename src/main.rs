@@ -403,10 +403,16 @@ fn check_single_command(
     // Check if this is a wrapper command
     if let Some(unwrap_result) = wrappers::unwrap_command(cmd, config) {
         // If there's an inner command, recursively analyze it
-        // Pass piped_query so it can reach nested mysql commands
+        // For nu -c, use nushell parser; for other wrappers, use bash parser
         if let Some(ref inner) = unwrap_result.inner_command {
-            let inner_result =
-                analyze_command_with_piped_query(inner, config, edit_mode, virtual_cwd, piped_query);
+            let inner_result = if unwrap_result.wrapper == "nu" {
+                // Use nushell parser for nu -c commands
+                analyze_nushell_command(inner, config, edit_mode, virtual_cwd)
+            } else {
+                // Use bash parser for other wrappers
+                // Pass piped_query so it can reach nested mysql commands
+                analyze_command_with_piped_query(inner, config, edit_mode, virtual_cwd, piped_query)
+            };
 
             // For SSH with host, check host rules too
             if unwrap_result.host.is_some() {
@@ -433,7 +439,8 @@ fn check_single_command(
         }
     }
 
-    // Special handling for sed -i (in-place edit)
+    // Special handling for sed -i (in-place edit) - check before cwd rules
+    // This is a safety feature that should always run
     if cmd.name == "sed" && cmd.args.iter().any(|a| a == "-i" || a.starts_with("-i")) {
         if !edit_mode {
             return PermissionResult {
@@ -441,6 +448,20 @@ fn check_single_command(
                 reason: "sed -i modifies files (not in edit mode)".to_string(),
                 suggestion: None,
             };
+        }
+    }
+
+    // Check cwd-based rules - if explicitly allowed, skip special analyzers
+    // This allows project-specific overrides (e.g., allow php for xenforo project)
+    // Try virtual_cwd first, then initial_cwd
+    let cwd_result = config.check_command_with_cwd(&cmd.name, &cmd.args, virtual_cwd);
+    if cwd_result.permission == Permission::Allow {
+        return cwd_result;
+    }
+    if initial_cwd != virtual_cwd {
+        let cwd_result = config.check_command_with_cwd(&cmd.name, &cmd.args, initial_cwd);
+        if cwd_result.permission == Permission::Allow {
+            return cwd_result;
         }
     }
 
@@ -941,5 +962,38 @@ mod tests {
             None,
         );
         assert_eq!(result.permission, Permission::Ask);
+    }
+
+    // nu -c wrapper tests (uses nushell parser for inner command)
+
+    #[test]
+    fn test_nu_c_builtin_allowed() {
+        let config = test_config();
+        // nu -c with nushell builtins should be allowed
+        let result = analyze_command(
+            "nu -c 'open /tmp/claude/test.json | get items | to json'",
+            &config,
+            false,
+            None,
+        );
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_nu_c_external_command() {
+        let config = test_config();
+        // nu -c with external command should check against rules
+        let result = analyze_command("nu -c 'ls -la'", &config, false, None);
+        // ls is allowed by config
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_nu_c_dangerous_builtin() {
+        let config = test_config();
+        // nu -c with rm should check against rules
+        let result = analyze_command("nu -c 'rm ~/Documents/important.txt'", &config, false, None);
+        // rm outside /tmp is dangerous
+        assert_eq!(result.permission, Permission::Passthrough);
     }
 }

@@ -272,17 +272,6 @@ impl Config {
         }
     }
 
-    /// Match a single rule
-    fn match_rule(
-        &self,
-        rule: &Rule,
-        name: &str,
-        args: &[String],
-        suggestion: Option<String>,
-    ) -> Option<PermissionResult> {
-        self.match_rule_with_cwd(rule, name, args, None, suggestion)
-    }
-
     /// Match a single rule with optional cwd override
     fn match_rule_with_cwd(
         &self,
@@ -293,21 +282,106 @@ impl Config {
         suggestion: Option<String>,
     ) -> Option<PermissionResult> {
         for pattern in &rule.commands {
-            if self.matches_pattern_with_cwd(pattern, name, args, cwd, &rule.opts_with_args) {
-                // Check cwd constraint if present
-                if let Some(ref cwd_pattern) = rule.cwd {
-                    if !self.matches_cwd(cwd_pattern, cwd) {
-                        continue;
-                    }
+            // If rule has cwd constraint, do path-resolved matching
+            if let Some(ref rule_cwd) = rule.cwd {
+                if self.matches_pattern_with_path_resolution(
+                    pattern,
+                    name,
+                    args,
+                    cwd,
+                    rule_cwd,
+                    &rule.opts_with_args,
+                ) {
+                    return Some(PermissionResult {
+                        permission: self.parse_permission(&rule.permission),
+                        reason: rule.reason.clone(),
+                        suggestion,
+                    });
                 }
-                return Some(PermissionResult {
-                    permission: self.parse_permission(&rule.permission),
-                    reason: rule.reason.clone(),
-                    suggestion,
-                });
+            } else {
+                // No cwd constraint - use simple pattern matching
+                if self.matches_pattern_with_cwd(pattern, name, args, cwd, &rule.opts_with_args) {
+                    return Some(PermissionResult {
+                        permission: self.parse_permission(&rule.permission),
+                        reason: rule.reason.clone(),
+                        suggestion,
+                    });
+                }
             }
         }
         None
+    }
+
+    /// Match pattern with path resolution for cwd-constrained rules
+    /// Resolves: cwd + cmd == rule_cwd + pattern
+    fn matches_pattern_with_path_resolution(
+        &self,
+        pattern: &str,
+        name: &str,
+        args: &[String],
+        cwd: Option<&str>,
+        rule_cwd: &str,
+        rule_opts: &[String],
+    ) -> bool {
+        let cwd = match cwd {
+            Some(c) => c,
+            None => return false,
+        };
+
+        // Check if cwd is under rule_cwd (required for cwd-constrained rules)
+        if !self.matches_cwd(rule_cwd, Some(cwd)) {
+            return false;
+        }
+
+        // Strip glob suffixes from rule_cwd for path resolution
+        let rule_cwd_base = rule_cwd
+            .strip_suffix("/**")
+            .or_else(|| rule_cwd.strip_suffix("/*"))
+            .unwrap_or(rule_cwd);
+
+        // Extract command part from pattern (first word)
+        let pattern_parts: Vec<&str> = pattern.split_whitespace().collect();
+        if pattern_parts.is_empty() {
+            return false;
+        }
+        let pattern_cmd = pattern_parts[0];
+
+        // Normalize command name (strip ./)
+        let name_normalized = name.strip_prefix("./").unwrap_or(name);
+        let pattern_cmd_normalized = pattern_cmd.strip_prefix("./").unwrap_or(pattern_cmd);
+
+        // Resolve absolute paths
+        let cmd_absolute = if name_normalized.starts_with('/') {
+            name_normalized.to_string()
+        } else {
+            format!(
+                "{}/{}",
+                cwd.trim_end_matches('/'),
+                name_normalized
+            )
+        };
+
+        let pattern_absolute = if pattern_cmd_normalized.starts_with('/') {
+            pattern_cmd_normalized.to_string()
+        } else {
+            format!(
+                "{}/{}",
+                rule_cwd_base.trim_end_matches('/'),
+                pattern_cmd_normalized
+            )
+        };
+
+        // Compare resolved paths
+        if cmd_absolute != pattern_absolute {
+            return false;
+        }
+
+        // If pattern has subcommands/flags, check those too
+        if pattern_parts.len() > 1 {
+            self.matches_pattern(pattern, name_normalized, args, rule_opts)
+        } else {
+            true
+        }
     }
 
     /// Check if current working directory matches the pattern
@@ -814,7 +888,7 @@ mod tests {
 
     #[test]
     fn test_cwd_matches_subdirectories() {
-        // cwd pattern should match the exact directory and subdirectories
+        // For cwd-constrained rules, cwd + cmd must resolve to rule_cwd + pattern
         let toml = r#"
             [[rules]]
             commands = ["run-tests.sh"]
@@ -824,22 +898,15 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml).unwrap();
 
-        // Exact match
+        // Exact cwd match - run-tests.sh at /home/user/project/run-tests.sh
         let result = config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user/project"));
         assert_eq!(result.permission, Permission::Allow);
 
-        // Subdirectory match
+        // Subdirectory does NOT match if paths don't resolve equally
+        // /home/user/project/src/run-tests.sh != /home/user/project/run-tests.sh
         let result =
             config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user/project/src"));
-        assert_eq!(result.permission, Permission::Allow);
-
-        // Deeper subdirectory match
-        let result = config.check_command_with_cwd(
-            "run-tests.sh",
-            &[],
-            Some("/home/user/project/src/tests"),
-        );
-        assert_eq!(result.permission, Permission::Allow);
+        assert_eq!(result.permission, Permission::Ask);
 
         // Should NOT match sibling directory
         let result =
@@ -853,7 +920,7 @@ mod tests {
 
     #[test]
     fn test_cwd_with_glob_suffix() {
-        // cwd pattern with /** suffix should also work
+        // cwd pattern with /** suffix - glob suffix is stripped for base path matching
         let toml = r#"
             [[rules]]
             commands = ["run-tests.sh"]
@@ -867,10 +934,55 @@ mod tests {
         let result = config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user/project"));
         assert_eq!(result.permission, Permission::Allow);
 
-        // Subdirectory match
+        // Subdirectory does NOT match (path resolution: /project/src/run-tests.sh != /project/run-tests.sh)
         let result =
             config.check_command_with_cwd("run-tests.sh", &[], Some("/home/user/project/src"));
+        assert_eq!(result.permission, Permission::Ask);
+    }
+
+    #[test]
+    fn test_cwd_path_resolution() {
+        // cwd + cmd must resolve to rule_cwd + pattern
+        let toml = r#"
+            [[rules]]
+            commands = ["bin/custom-cli"]
+            permission = "allow"
+            reason = "my project"
+            cwd = "/home/user/project"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+
+        // Case 1: exact cwd, exact cmd -> allow
+        let result =
+            config.check_command_with_cwd("bin/custom-cli", &[], Some("/home/user/project"));
         assert_eq!(result.permission, Permission::Allow);
+
+        // Case 2: exact cwd, ./bin/custom-cli -> allow (normalized)
+        let result =
+            config.check_command_with_cwd("./bin/custom-cli", &[], Some("/home/user/project"));
+        assert_eq!(result.permission, Permission::Allow);
+
+        // Case 3: cwd is subdirectory (bin), cmd is ./custom-cli
+        // Resolves to /home/user/project/bin/custom-cli == /home/user/project/bin/custom-cli -> allow
+        let result =
+            config.check_command_with_cwd("./custom-cli", &[], Some("/home/user/project/bin"));
+        assert_eq!(result.permission, Permission::Allow);
+
+        // Case 4: exact cwd, cmd is ./custom-cli (wrong path)
+        // Resolves to /home/user/project/custom-cli != /home/user/project/bin/custom-cli -> no match
+        let result =
+            config.check_command_with_cwd("./custom-cli", &[], Some("/home/user/project"));
+        assert_eq!(result.permission, Permission::Ask);
+
+        // Case 5: parent cwd (not under rule_cwd) -> no match
+        let result = config.check_command_with_cwd("bin/custom-cli", &[], Some("/home/user"));
+        assert_eq!(result.permission, Permission::Ask);
+
+        // Case 6: cwd is /project/other, cmd is bin/custom-cli
+        // Resolves to /home/user/project/other/bin/custom-cli != /home/user/project/bin/custom-cli -> no match
+        let result =
+            config.check_command_with_cwd("bin/custom-cli", &[], Some("/home/user/project/other"));
+        assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]

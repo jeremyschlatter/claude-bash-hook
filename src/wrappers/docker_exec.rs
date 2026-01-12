@@ -12,9 +12,32 @@ pub fn unwrap(cmd: &Command) -> Option<UnwrapResult> {
 
     // Check for docker compose exec or run
     if cmd.args.first().map(|s| s.as_str()) == Some("compose") {
-        match cmd.args.get(1).map(|s| s.as_str()) {
-            Some("exec") => return unwrap_exec(&cmd.args[2..], "docker compose exec"),
-            Some("run") => return unwrap_compose_run(&cmd.args[2..]),
+        // Skip compose options to find the subcommand (exec/run)
+        // Options like -f, --file, -p, --project-name take an argument
+        let compose_opts_with_args = ["-f", "--file", "-p", "--project-name", "--env-file"];
+        let mut i = 1;
+        while i < cmd.args.len() {
+            let arg = &cmd.args[i];
+            if arg.starts_with('-') {
+                if arg.contains('=') {
+                    // --file=foo format, skip just this arg
+                    i += 1;
+                } else if compose_opts_with_args.iter().any(|o| *o == arg) {
+                    // -f foo format, skip this and next arg
+                    i += 2;
+                } else {
+                    // Flag without argument (e.g., --verbose)
+                    i += 1;
+                }
+            } else {
+                // Found the subcommand
+                break;
+            }
+        }
+
+        match cmd.args.get(i).map(|s| s.as_str()) {
+            Some("exec") => return unwrap_exec(&cmd.args[i + 1..], "docker compose exec"),
+            Some("run") => return unwrap_compose_run(&cmd.args[i + 1..]),
             _ => return None,
         }
     }
@@ -230,6 +253,22 @@ mod tests {
             result.inner_command,
             Some("python manage.py migrate".to_string())
         );
+        assert_eq!(result.wrapper, "docker compose run");
+    }
+
+    #[test]
+    fn test_docker_compose_run_with_file_flag() {
+        let cmd = make_cmd(&[
+            "compose",
+            "-f",
+            "docker-compose.test.yml",
+            "run",
+            "--rm",
+            "test",
+        ]);
+        let result = unwrap(&cmd).unwrap();
+        // No inner command - just runs the service's default command
+        assert_eq!(result.inner_command, None);
         assert_eq!(result.wrapper, "docker compose run");
     }
 

@@ -59,9 +59,16 @@ reason = "safe git operations"
 # Docker read-only and safe operations
 [[rules]]
 commands = [
-    "docker ps", "docker logs", "docker inspect", "docker images",
+    "docker ps", "docker logs", "docker inspect", "docker images", "docker stats", "docker info",
+    "docker top", "docker port", "docker diff", "docker history", "docker events", "docker version",
     "docker pull", "docker build", "docker tag", "docker search",
-    "docker compose ps", "docker compose logs",
+    "docker network ls", "docker network inspect",
+    "docker volume ls", "docker volume inspect",
+    "docker system df", "docker system info",
+    "docker context ls", "docker context inspect", "docker context show",
+    "docker image ls", "docker image inspect", "docker image history",
+    "docker container ls", "docker container inspect", "docker container logs", "docker container top", "docker container stats",
+    "docker compose ps", "docker compose logs", "docker compose config", "docker compose top", "docker compose images", "docker compose port", "docker compose version",
 ]
 permission = "allow"
 reason = "docker read-only and safe operations"

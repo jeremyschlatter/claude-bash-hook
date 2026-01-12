@@ -62,6 +62,42 @@ pub fn analyze(cmd: &str) -> NushellAnalysisResult {
     }
 }
 
+/// Nushell builtins that are read-only and safe to allow
+/// Without stdlib loaded, the parser treats these as external commands
+const SAFE_NUSHELL_BUILTINS: &[&str] = &[
+    // Data manipulation (read-only)
+    "open", "get", "select", "where", "each", "filter", "find", "first", "last",
+    "skip", "take", "reverse", "sort-by", "uniq", "flatten", "transpose",
+    "group-by", "split-by", "merge", "join", "zip", "enumerate", "range",
+    "length", "is-empty", "is-not-empty", "columns", "values", "headers",
+    // Conversion
+    "to", "from", "into",
+    // String operations
+    "str", "split", "lines", "parse", "format",
+    // Math
+    "math", "sum", "avg", "min", "max", "count",
+    // Comparison/logic
+    "if", "else", "match", "not", "and", "or", "all", "any",
+    // Variables
+    "let", "mut", "const", "def",
+    // Output
+    "print", "echo", "table", "grid",
+    // System info (read-only)
+    "sys", "ps", "which", "version",
+    // Path operations (read-only)
+    "path",
+    // Date/time
+    "date",
+    // Help
+    "help", "describe",
+    // Debug
+    "debug", "inspect", "metadata",
+    // Ignore (used to suppress output)
+    "ignore", "null",
+    // HTTP (read-only methods)
+    "http", // Note: http get is read-only, http post is not - but we'll allow for now
+];
+
 /// Extract external command calls from a parsed block
 fn extract_external_commands(
     block: &nu_protocol::ast::Block,
@@ -88,6 +124,13 @@ fn extract_from_expression(
             // External command - check all of them regardless of ^ prefix
             // The ^ is optional in nushell, so `rm` and `^rm` are equivalent
             let name = span_to_string(head.span, source);
+            let clean_name = name.trim_start_matches('^');
+
+            // Skip safe nushell builtins (parser treats them as external without stdlib)
+            if SAFE_NUSHELL_BUILTINS.contains(&clean_name) {
+                return;
+            }
+
             let text = span_to_string(expr.span, source);
 
             let arg_strings: Vec<String> = args
@@ -103,7 +146,7 @@ fn extract_from_expression(
                 .collect();
 
             commands.push(Command {
-                name: name.trim_start_matches('^').to_string(),
+                name: clean_name.to_string(),
                 args: arg_strings,
                 text: text.trim_start_matches('^').to_string(),
             });
@@ -114,7 +157,8 @@ fn extract_from_expression(
             let call_name = span_to_string(call.head, source);
 
             // Dangerous builtins that should be checked
-            let dangerous_builtins = ["rm", "mv", "cp", "mkdir", "touch", "save", "open"];
+            // Note: nushell's `open` is read-only (reads files for pipeline), unlike shell `open`
+            let dangerous_builtins = ["rm", "mv", "cp", "mkdir", "touch", "save"];
 
             if dangerous_builtins.contains(&call_name.as_str()) {
                 // Extract arguments
@@ -251,5 +295,16 @@ mod tests {
         assert!(result.success);
         assert_eq!(result.commands.len(), 1);
         assert_eq!(result.commands[0].name, "rm");
+    }
+
+    #[test]
+    fn test_open_get_to_json() {
+        // Pure nushell builtins - no external commands
+        let result = analyze("open /tmp/claude/test.json | get items | to json");
+        eprintln!("success: {}, error: {:?}", result.success, result.error);
+        eprintln!("commands: {:?}", result.commands);
+        assert!(result.success);
+        // Should have no dangerous commands
+        assert_eq!(result.commands.len(), 0);
     }
 }
