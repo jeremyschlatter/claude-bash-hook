@@ -356,7 +356,11 @@ impl Config {
         let cmd_absolute = if name_normalized.starts_with('/') {
             name_normalized.to_string()
         } else {
-            format!("{}/{}", cwd_canonical.trim_end_matches('/'), name_normalized)
+            format!(
+                "{}/{}",
+                cwd_canonical.trim_end_matches('/'),
+                name_normalized
+            )
         };
 
         let pattern_absolute = if pattern_cmd_normalized.starts_with('/') {
