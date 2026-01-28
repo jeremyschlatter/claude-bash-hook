@@ -19,7 +19,7 @@ commands = [
     "pwd", "whoami", "hostname", "uname", "id", "groups",
     "ps", "top", "htop", "df", "du", "free", "uptime", "date",
     "grep", "rg", "find", "fd", "fdfind", "locate", "wc", "diff", "sort", "uniq", "shuf", "which", "whereis", "file", "tr", "cut", "paste", "col", "sd", "basename", "dirname", "readlink", "base64", "xxd", "od", "zcat", "zgrep", "gzip", "gzip -d", "gunzip", "bsdtar -xOf", "bsdtar -tvf", "bsdtar -tf", "comm", "command -v",
-    "jq", "yq", "xq",
+    "jq", "yq", "xq", "bc",
     "cd", "echo", "read", "mkdir", "cp", "mv", "chmod", "ln", "rmdir", "yes", "true", "false", "touch", "unset",
     "sed", "awk",  # sed -i requires edit mode
     "lsblk", "findmnt", "ldd", "nm", "nm -D", "readelf", "objdump", "lspci", "lscpu", "lsusb", "pkg-config --list-all", "conntrack -L", "strings", "lsof", "dmesg", "lsmod", "modinfo", "rocm-smi", "iostat", "pdfinfo", "infocmp", "crontab -l", "xkbcli list", "btrfs subvolume list", "btrfs filesystem df", "btrfs filesystem du", "btrfs filesystem show", "btrfs filesystem usage", "gemini --version", "rfkill list", "blkid", "nvme id-ns", "sfdisk -l", "efibootmgr -v", "mokutil --sb-state", "bootctl status", "rustc --print", "claude --version", "ollama --version", "bluetoothctl show", "bluetoothctl devices", "vulkaninfo", "nft list", "coredumpctl list", "iptables -L", "varlinkctl info", "varlinkctl introspect",
@@ -28,7 +28,7 @@ commands = [
     "quickshell ipc query",
     "php -l", "dpkg -l", "dpkg -S",
     "openssl s_client -connect", "openssl x509 -noout -text", "openssl x509 -noout -dates",
-    "flatpak list", "snap list", "niri validate", "kitty --version", "yazi --help", "npm --version", "npm run typecheck", "wezterm show-keys", "wezterm ls-fonts", "xdg-settings get", "xdg-mime query", "composer", "composer install", "composer show", "composer why",
+    "flatpak list", "snap list", "niri validate", "kitty --version", "yazi --help", "npm --version", "npm root", "npm run typecheck", "wezterm show-keys", "wezterm ls-fonts", "xdg-settings get", "xdg-mime query", "composer", "composer install", "composer show", "composer why",
     "mago lint", "mago config", "phpstan analyze",
     "shellharden", "shfmt",
 ]
@@ -83,7 +83,7 @@ reason = "docker destructive"
 [[rules]]
 commands = [
     "kubectl get", "kubectl describe", "kubectl logs",
-    "kubectl explain", "kubectl api-resources", "kubectl top",
+    "kubectl explain", "kubectl api-resources", "kubectl top", "kubectl cluster-info",
     "kubectl rollout history", "kubectl rollout status",
     "kubectl cp",
 ]
@@ -93,8 +93,8 @@ reason = "kubectl read-only and safe operations"
 # glab read-only and safe operations
 [[rules]]
 commands = [
-    "glab mr list", "glab mr view",
-    "gh repo list", "gh issue list",
+    "glab mr list", "glab mr view", "glab mr update",
+    "gh repo list", "gh issue list", "gh issue view", "gh pr view",
     "glab ci status", "glab ci list", "glab ci view", "glab ci trace",
     "glab ci run", "glab ci retry", "glab ci trigger",
     "glab issue list", "glab issue view",
@@ -102,6 +102,18 @@ commands = [
 ]
 permission = "allow"
 reason = "glab read-only and safe operations"
+
+# gitlab CLI read-only
+[[rules]]
+commands = ["gitlab mr list", "gitlab mr show", "gitlab mr view", "gitlab ci status", "gitlab ci logs", "gitlab issue list", "gitlab issue show", "gitlab webhook list", "gitlab --help"]
+permission = "allow"
+reason = "gitlab read-only"
+
+# claude-agent read-only
+[[rules]]
+commands = ["claude-agent stats", "claude-agent jobs", "claude-agent logs", "claude-agent review"]
+permission = "allow"
+reason = "claude-agent read-only"
 
 # warp-cli allowed operations
 [[rules]]
@@ -273,6 +285,7 @@ host_rules = [
     { pattern = "::1", permission = "allow" },
     { pattern = "[::1]", permission = "allow" },
     { pattern = "0.0.0.0", permission = "allow" },
+    { pattern = "claude-agent.globalcomixdev.com", permission = "allow" },
     { pattern = "*", permission = "ask" },
 ]
 

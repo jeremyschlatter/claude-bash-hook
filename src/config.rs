@@ -331,6 +331,16 @@ impl Config {
             .or_else(|| rule_cwd.strip_suffix("/*"))
             .unwrap_or(rule_cwd);
 
+        // Canonicalize paths to resolve symlinks
+        let rule_cwd_canonical = std::path::Path::new(rule_cwd_base)
+            .canonicalize()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| rule_cwd_base.to_string());
+        let cwd_canonical = std::path::Path::new(cwd)
+            .canonicalize()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| cwd.to_string());
+
         // Extract command part from pattern (first word)
         let pattern_parts: Vec<&str> = pattern.split_whitespace().collect();
         if pattern_parts.is_empty() {
@@ -342,11 +352,11 @@ impl Config {
         let name_normalized = name.strip_prefix("./").unwrap_or(name);
         let pattern_cmd_normalized = pattern_cmd.strip_prefix("./").unwrap_or(pattern_cmd);
 
-        // Resolve absolute paths
+        // Resolve absolute paths using canonical paths
         let cmd_absolute = if name_normalized.starts_with('/') {
             name_normalized.to_string()
         } else {
-            format!("{}/{}", cwd.trim_end_matches('/'), name_normalized)
+            format!("{}/{}", cwd_canonical.trim_end_matches('/'), name_normalized)
         };
 
         let pattern_absolute = if pattern_cmd_normalized.starts_with('/') {
@@ -354,7 +364,7 @@ impl Config {
         } else {
             format!(
                 "{}/{}",
-                rule_cwd_base.trim_end_matches('/'),
+                rule_cwd_canonical.trim_end_matches('/'),
                 pattern_cmd_normalized
             )
         };
