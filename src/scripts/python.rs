@@ -1,7 +1,8 @@
-//! Python inline script analysis for `python -c` commands
+//! Python inline script analysis for `python -c` and heredoc commands
 
 use crate::analyzer::Command;
 use crate::config::{Permission, PermissionResult};
+use regex::Regex;
 
 /// Dangerous Python functions/modules that have side effects
 const DANGEROUS_PATTERNS: &[&str] = &[
@@ -146,29 +147,140 @@ fn is_readonly_python(code: &str) -> bool {
     true
 }
 
-/// Check if a python command is read-only
-pub fn check_python_script(cmd: &Command) -> Option<PermissionResult> {
+/// Extract Python code from a heredoc in the full command
+fn extract_heredoc_code(full_command: &str) -> Option<String> {
+    // Match heredoc patterns: << 'EOF', << "EOF", <<EOF, <<-EOF, etc.
+    // First find the delimiter
+    let delim_re = Regex::new(r#"<<-?\s*['"]?(\w+)['"]?\s*\n"#).ok()?;
+
+    let caps = delim_re.captures(full_command)?;
+    let delimiter = caps.get(1)?.as_str();
+    let delim_end = caps.get(0)?.end();
+
+    // Find where the delimiter appears at the start of a line
+    let rest = &full_command[delim_end..];
+    let end_pattern = format!("\n{}", delimiter);
+
+    let content_end = rest.find(&end_pattern)?;
+    Some(rest[..content_end].to_string())
+}
+
+/// Extract file paths from open() calls with write modes
+fn extract_write_paths(code: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+
+    // Find all open() calls with write modes
+    let mut pos = 0;
+    while let Some(idx) = code[pos..].find("open(") {
+        let start = pos + idx + 5;
+        if let Some(close) = code[start..].find(')') {
+            let args = &code[start..start + close];
+
+            // Check if this is a write mode
+            if args.contains("'w")
+                || args.contains("\"w")
+                || args.contains("'a")
+                || args.contains("\"a")
+                || args.contains("'x")
+                || args.contains("\"x")
+                || args.contains("'+")
+                || args.contains("\"+")
+                || args.contains("mode='w")
+                || args.contains("mode=\"w")
+                || args.contains("mode='a")
+                || args.contains("mode=\"a")
+            {
+                // Extract the file path (first argument)
+                if let Some(path) = extract_string_arg(args) {
+                    paths.push(path);
+                }
+            }
+        }
+        pos = start;
+    }
+
+    paths
+}
+
+/// Extract a string argument from function args
+fn extract_string_arg(args: &str) -> Option<String> {
+    // Find first string literal (single or double quoted)
+    let args = args.trim();
+
+    // Try single quotes first
+    if let Some(start) = args.find('\'') {
+        if let Some(end) = args[start + 1..].find('\'') {
+            return Some(args[start + 1..start + 1 + end].to_string());
+        }
+    }
+
+    // Try double quotes
+    if let Some(start) = args.find('"') {
+        if let Some(end) = args[start + 1..].find('"') {
+            return Some(args[start + 1..start + 1 + end].to_string());
+        }
+    }
+
+    None
+}
+
+/// Check if all write paths are within allowed directories
+fn all_writes_allowed(paths: &[String], cwd: Option<&str>) -> bool {
+    for path in paths {
+        let is_tmp = path.starts_with("/tmp/") || path == "/tmp";
+        let is_in_project = cwd.is_some_and(|c| path.starts_with(c));
+
+        if !is_tmp && !is_in_project {
+            return false;
+        }
+    }
+    true
+}
+
+/// Check if a python command is read-only or writes only to allowed paths
+pub fn check_python_script(
+    cmd: &Command,
+    full_command: Option<&str>,
+    cwd: Option<&str>,
+) -> Option<PermissionResult> {
     // Match python, python3, python3.x
     if !cmd.name.starts_with("python") {
         return None;
     }
 
-    // Only handle -c flag
-    let code = extract_python_code(cmd)?;
+    // Try -c flag first
+    let code = if let Some(code) = extract_python_code(cmd) {
+        code.to_string()
+    } else if let Some(full_cmd) = full_command {
+        // Try heredoc extraction
+        extract_heredoc_code(full_cmd)?
+    } else {
+        return None;
+    };
 
-    if is_readonly_python(code) {
-        Some(PermissionResult {
+    if is_readonly_python(&code) {
+        return Some(PermissionResult {
             permission: Permission::Allow,
             reason: "read-only Python script".to_string(),
             suggestion: None,
-        })
-    } else {
-        Some(PermissionResult {
-            permission: Permission::Ask,
-            reason: "Python script may have side effects".to_string(),
-            suggestion: None,
-        })
+        });
     }
+
+    // Check if writes are only to allowed paths (project dir or /tmp)
+    let write_paths = extract_write_paths(&code);
+    if !write_paths.is_empty() && all_writes_allowed(&write_paths, cwd) {
+        return Some(PermissionResult {
+            permission: Permission::Allow,
+            reason: "Python script writes to project dir or /tmp".to_string(),
+            suggestion: None,
+        });
+    }
+
+    Some(PermissionResult {
+        permission: Permission::Ask,
+        reason: "Python script may have side effects".to_string(),
+        suggestion: None,
+    })
 }
 
 #[cfg(test)]
@@ -186,7 +298,7 @@ mod tests {
     #[test]
     fn test_print_allowed() {
         let cmd = make_cmd("python3", &["-c", "print('hello')"]);
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
@@ -196,14 +308,14 @@ mod tests {
             "python3",
             &["-c", "import json; print(json.loads('{\"a\": 1}'))"],
         );
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_sys_version_allowed() {
         let cmd = make_cmd("python", &["-c", "import sys; print(sys.version)"]);
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
@@ -213,7 +325,7 @@ mod tests {
             "python3",
             &["-c", "import base64; print(base64.b64decode('aGVsbG8='))"],
         );
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
@@ -223,35 +335,59 @@ mod tests {
             "python3",
             &["-c", "import os.path; print(os.path.basename('/tmp/foo'))"],
         );
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_read_file_allowed() {
         let cmd = make_cmd("python3", &["-c", "print(open('/etc/hosts').read())"]);
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
     fn test_read_file_explicit_mode_allowed() {
         let cmd = make_cmd("python3", &["-c", "print(open('/etc/hosts', 'r').read())"]);
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
-    fn test_write_file_asks() {
+    fn test_write_to_tmp_allowed() {
+        // Writes to /tmp are allowed
         let cmd = make_cmd("python3", &["-c", "open('/tmp/test', 'w').write('data')"]);
-        let result = check_python_script(&cmd).unwrap();
-        assert_eq!(result.permission, Permission::Ask);
+        let result = check_python_script(&cmd, None, None).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
-    fn test_append_file_asks() {
+    fn test_append_to_tmp_allowed() {
+        // Appends to /tmp are allowed
         let cmd = make_cmd("python3", &["-c", "open('/tmp/test', 'a').write('data')"]);
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_write_to_project_dir_allowed() {
+        // Writes to project dir are allowed when cwd is set
+        let cmd = make_cmd(
+            "python3",
+            &[
+                "-c",
+                "open('/home/user/project/file.txt', 'w').write('data')",
+            ],
+        );
+        let result = check_python_script(&cmd, None, Some("/home/user/project")).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_write_outside_project_asks() {
+        // Writes outside project dir should ask
+        let cmd = make_cmd("python3", &["-c", "open('/etc/passwd', 'w').write('data')"]);
+        let result = check_python_script(&cmd, None, Some("/home/user/project")).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
@@ -261,42 +397,42 @@ mod tests {
             "python3",
             &["-c", "import subprocess; subprocess.run(['ls'])"],
         );
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_os_system_asks() {
         let cmd = make_cmd("python3", &["-c", "import os; os.system('ls')"]);
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_os_remove_asks() {
         let cmd = make_cmd("python3", &["-c", "import os; os.remove('/tmp/test')"]);
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_eval_asks() {
         let cmd = make_cmd("python3", &["-c", "eval('print(1)')"]);
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_exec_asks() {
         let cmd = make_cmd("python3", &["-c", "exec('print(1)')"]);
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_shutil_asks() {
         let cmd = make_cmd("python3", &["-c", "import shutil; shutil.copy('a', 'b')"]);
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
@@ -306,7 +442,7 @@ mod tests {
             "python3",
             &["-c", "import requests; requests.get('http://example.com')"],
         );
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Ask);
     }
 
@@ -317,14 +453,14 @@ mod tests {
             args: vec!["-e".to_string(), "puts 'hello'".to_string()],
             text: "ruby -e puts 'hello'".to_string(),
         };
-        let result = check_python_script(&cmd);
+        let result = check_python_script(&cmd, None, None);
         assert!(result.is_none());
     }
 
     #[test]
     fn test_python_without_c_returns_none() {
         let cmd = make_cmd("python3", &["script.py"]);
-        let result = check_python_script(&cmd);
+        let result = check_python_script(&cmd, None, None);
         assert!(result.is_none());
     }
 
@@ -337,7 +473,33 @@ mod tests {
                 "import json, sys; data = json.loads(sys.stdin.read()); print(len(data))",
             ],
         );
-        let result = check_python_script(&cmd).unwrap();
+        let result = check_python_script(&cmd, None, None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_heredoc_readonly_allowed() {
+        let cmd = make_cmd("python3", &[]);
+        let full_cmd = "python3 << 'EOF'\nprint('hello')\nEOF";
+        let result = check_python_script(&cmd, Some(full_cmd), None).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_heredoc_write_to_project_allowed() {
+        let cmd = make_cmd("python3", &[]);
+        let full_cmd =
+            "python3 << 'EOF'\nwith open('/project/file.txt', 'w') as f:\n    f.write('data')\nEOF";
+        let result = check_python_script(&cmd, Some(full_cmd), Some("/project")).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_heredoc_write_outside_project_asks() {
+        let cmd = make_cmd("python3", &[]);
+        let full_cmd =
+            "python3 << 'EOF'\nwith open('/etc/passwd', 'w') as f:\n    f.write('data')\nEOF";
+        let result = check_python_script(&cmd, Some(full_cmd), Some("/project")).unwrap();
+        assert_eq!(result.permission, Permission::Ask);
     }
 }

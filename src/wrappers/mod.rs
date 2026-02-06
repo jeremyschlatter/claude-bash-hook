@@ -5,6 +5,7 @@
 
 mod docker_exec;
 mod env;
+mod gcloud;
 mod kubectl;
 mod rsync;
 mod scp;
@@ -37,6 +38,7 @@ pub fn unwrap_command(cmd: &Command, config: &Config) -> Option<UnwrapResult> {
         "scp" => return scp::unwrap(cmd),
         "rsync" => return rsync::unwrap(cmd),
         "env" => return env::unwrap(cmd),
+        "gcloud" => return gcloud::unwrap(cmd),
         "kubectl" => return kubectl::unwrap(cmd),
         "docker" => return docker_exec::unwrap(cmd),
         "timeout" => return timeout::unwrap(cmd),

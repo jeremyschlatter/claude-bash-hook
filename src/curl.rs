@@ -122,17 +122,19 @@ pub fn check_curl(cmd: &Command, config: &Config) -> Option<PermissionResult> {
         // Skip options
         if arg.starts_with('-') {
             // Check if this option takes an argument
-            let opt = if arg.contains('=') {
+            if arg.contains('=') {
                 // --option=value - no need to skip next
                 continue;
             } else if arg.len() > 2 && arg.starts_with('-') && !arg.starts_with("--") {
-                // Combined short opts like -sL - check first char
-                &arg[0..2]
-            } else {
-                arg.as_str()
-            };
-
-            if opts_with_args.contains(&opt) {
+                // Combined short opts like -sLA - check if ANY takes an argument
+                // The last one that takes an arg will consume the next token
+                for c in arg[1..].chars() {
+                    let opt = format!("-{}", c);
+                    if opts_with_args.contains(&opt.as_str()) {
+                        skip_next = true;
+                    }
+                }
+            } else if opts_with_args.contains(&arg.as_str()) {
                 skip_next = true;
             }
             continue;
@@ -316,5 +318,20 @@ mod tests {
         };
         let result = check_curl(&cmd, &config);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_curl_combined_short_opts_with_arg() {
+        // -sLA "Mozilla/5.0" - the -A takes an argument, should skip it
+        let config = config_with_curl_rules();
+        let cmd = make_cmd(&[
+            "-sLA",
+            "Mozilla/5.0",
+            "https://localhost/page",
+            "-o",
+            "/tmp/out.html",
+        ]);
+        let result = check_curl(&cmd, &config).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
     }
 }

@@ -8,6 +8,7 @@ mod config;
 mod curl;
 mod docker;
 mod git;
+mod kill;
 mod nushell;
 mod redis;
 mod rm;
@@ -41,6 +42,8 @@ struct ToolInput {
     cwd: Option<String>,
     // For Write tool
     file_path: Option<String>,
+    // For regex-replace MCP tool
+    dry_run: Option<bool>,
 }
 
 /// Check if edits are allowed based on permission mode
@@ -124,6 +127,24 @@ fn main() {
             if let Some(result) = check_write_path(path) {
                 output_decision(&result.0, &result.1);
             }
+        }
+        return;
+    }
+
+    // Handle regex-replace MCP tool
+    if hook_input.tool_name == "mcp__regex-replace__regex_replace" {
+        let edit_mode = edits_allowed(hook_input.permission_mode.as_deref());
+        let is_dry_run = hook_input.tool_input.dry_run.unwrap_or(false);
+
+        if edit_mode || is_dry_run {
+            let reason = if is_dry_run {
+                "regex replace (dry run)"
+            } else {
+                "regex replace (edit mode)"
+            };
+            output_decision("allow", reason);
+        } else {
+            output_decision("ask", "regex replace modifies files (not in edit mode)");
         }
         return;
     }
@@ -235,7 +256,7 @@ fn analyze_command(
     edit_mode: bool,
     initial_cwd: Option<&str>,
 ) -> PermissionResult {
-    analyze_command_with_piped_query(command, config, edit_mode, initial_cwd, None)
+    analyze_command_with_piped_query(command, config, edit_mode, initial_cwd, None, false)
 }
 
 /// Analyze a bash command with optional piped query context
@@ -245,6 +266,7 @@ fn analyze_command_with_piped_query(
     edit_mode: bool,
     initial_cwd: Option<&str>,
     outer_piped_query: Option<&str>,
+    is_remote: bool,
 ) -> PermissionResult {
     let analysis = analyzer::analyze(command);
 
@@ -293,6 +315,8 @@ fn analyze_command_with_piped_query(
             initial_cwd,
             has_uncertain_flow,
             piped_query,
+            Some(command),
+            is_remote,
         );
 
         most_restrictive = Some(match most_restrictive {
@@ -354,7 +378,8 @@ fn analyze_nushell_command(
     for cmd in &analysis.commands {
         // For nushell, cwd is both virtual and initial (no cd tracking)
         // No piped query support for nushell (different piping semantics)
-        let result = check_single_command(cmd, config, edit_mode, cwd, cwd, false, None);
+        let result =
+            check_single_command(cmd, config, edit_mode, cwd, cwd, false, None, None, false);
 
         most_restrictive = Some(match most_restrictive {
             None => result,
@@ -399,19 +424,43 @@ fn check_single_command(
     initial_cwd: Option<&str>,
     has_uncertain_flow: bool,
     piped_query: Option<&str>,
+    full_command: Option<&str>,
+    is_remote: bool,
 ) -> PermissionResult {
+    // Special handling for docker compose - check BEFORE wrapper unwrapping
+    if cmd.name == "docker" && cmd.args.first().map(|s| s.as_str()) == Some("compose") {
+        // exec: allow locally, fall through to wrapper analysis for remote
+        if let Some(result) = docker::check_docker_compose_exec(cmd, is_remote) {
+            return result;
+        }
+        // run: allow based on bind mounts
+        if let Some(result) = docker::check_docker_compose_run(cmd) {
+            return result;
+        }
+    }
+
     // Check if this is a wrapper command
     if let Some(unwrap_result) = wrappers::unwrap_command(cmd, config) {
         // If there's an inner command, recursively analyze it
         // For nu -c, use nushell parser; for other wrappers, use bash parser
         if let Some(ref inner) = unwrap_result.inner_command {
+            // Mark as remote if this wrapper has a host (SSH, scp, rsync)
+            let inner_is_remote = is_remote || unwrap_result.host.is_some();
+
             let inner_result = if unwrap_result.wrapper == "nu" {
                 // Use nushell parser for nu -c commands
                 analyze_nushell_command(inner, config, edit_mode, virtual_cwd)
             } else {
                 // Use bash parser for other wrappers
                 // Pass piped_query so it can reach nested mysql commands
-                analyze_command_with_piped_query(inner, config, edit_mode, virtual_cwd, piped_query)
+                analyze_command_with_piped_query(
+                    inner,
+                    config,
+                    edit_mode,
+                    virtual_cwd,
+                    piped_query,
+                    inner_is_remote,
+                )
             };
 
             // For SSH with host, check host rules too
@@ -439,29 +488,46 @@ fn check_single_command(
         }
     }
 
-    // Special handling for sed -i (in-place edit) - check before cwd rules
-    // This is a safety feature that should always run
+    // Deny in-place file modification by text replacement tools
+    // Inline/pipeline usage (sed 's/foo/bar/', awk '{print $1}') is allowed
     if cmd.name == "sed" && cmd.args.iter().any(|a| a == "-i" || a.starts_with("-i")) {
-        if !edit_mode {
-            return PermissionResult {
-                permission: Permission::Ask,
-                reason: "sed -i modifies files (not in edit mode)".to_string(),
-                suggestion: None,
-            };
-        }
+        return PermissionResult {
+            permission: Permission::Deny,
+            reason: "sed -i modifies files; use Edit tool or mcp__regex-replace__regex_replace"
+                .to_string(),
+            suggestion: None,
+        };
+    }
+    // perl -i, -pi, -pie all indicate in-place editing (any short flag group containing 'i')
+    if cmd.name == "perl"
+        && cmd
+            .args
+            .iter()
+            .any(|a| a.starts_with('-') && !a.starts_with("--") && a.contains('i'))
+    {
+        return PermissionResult {
+            permission: Permission::Deny,
+            reason: "perl -i modifies files; use Edit tool or mcp__regex-replace__regex_replace"
+                .to_string(),
+            suggestion: None,
+        };
     }
 
     // Check cwd-based rules - if explicitly allowed, skip special analyzers
     // This allows project-specific overrides (e.g., allow php for xenforo project)
-    // Try virtual_cwd first, then initial_cwd
-    let cwd_result = config.check_command_with_cwd(&cmd.name, &cmd.args, virtual_cwd);
-    if cwd_result.permission == Permission::Allow {
-        return cwd_result;
-    }
-    if initial_cwd != virtual_cwd {
-        let cwd_result = config.check_command_with_cwd(&cmd.name, &cmd.args, initial_cwd);
+    // IMPORTANT: Skip cwd-based allows for remote commands (SSH, etc.) to prevent
+    // local cwd from allowing dangerous remote operations
+    if !is_remote {
+        // Try virtual_cwd first, then initial_cwd
+        let cwd_result = config.check_command_with_cwd(&cmd.name, &cmd.args, virtual_cwd);
         if cwd_result.permission == Permission::Allow {
             return cwd_result;
+        }
+        if initial_cwd != virtual_cwd {
+            let cwd_result = config.check_command_with_cwd(&cmd.name, &cmd.args, initial_cwd);
+            if cwd_result.permission == Permission::Allow {
+                return cwd_result;
+            }
         }
     }
 
@@ -479,8 +545,25 @@ fn check_single_command(
 
     // Special handling for sqlite3 - allow read-only queries
     if cmd.name == "sqlite3" {
+        // First check positional query argument
         if let Some(result) = sql::check_sqlite3_query(cmd) {
             return result;
+        }
+        // Then check piped query (from echo 'SQL' | sqlite3 db.sqlite)
+        if let Some(query) = piped_query {
+            return sql::check_piped_query(query);
+        }
+    }
+
+    // Special handling for clickhouse-client - allow read-only queries
+    if cmd.name == "clickhouse-client" {
+        // First check -q flag query
+        if let Some(result) = sql::check_clickhouse_query(cmd) {
+            return result;
+        }
+        // Then check piped query (from echo 'SQL' | clickhouse-client)
+        if let Some(query) = piped_query {
+            return sql::check_piped_query(query);
         }
     }
 
@@ -498,9 +581,10 @@ fn check_single_command(
         }
     }
 
-    // Special handling for python -c - allow read-only scripts
+    // Special handling for python -c or heredoc - allow read-only scripts
+    // or scripts that only write to project dir / /tmp
     if cmd.name.starts_with("python") {
-        if let Some(result) = scripts::python::check_python_script(cmd) {
+        if let Some(result) = scripts::python::check_python_script(cmd, full_command, initial_cwd) {
             return result;
         }
     }
@@ -519,6 +603,13 @@ fn check_single_command(
         }
     }
 
+    // Special handling for git reset - allow unless --hard
+    if cmd.name == "git" && cmd.args.first().map(|s| s.as_str()) == Some("reset") {
+        if let Some(result) = git::check_git_reset(cmd) {
+            return result;
+        }
+    }
+
     // Special handling for docker run - allow if no rw bind mounts
     if cmd.name == "docker" && cmd.args.first().map(|s| s.as_str()) == Some("run") {
         if let Some(result) = docker::check_docker_run(cmd) {
@@ -529,6 +620,13 @@ fn check_single_command(
     // Special handling for rm - allow deletion under /tmp/ or project dir
     if cmd.name == "rm" {
         if let Some(result) = rm::check_rm(cmd, virtual_cwd, initial_cwd) {
+            return result;
+        }
+    }
+
+    // Special handling for kill - block dangerous PIDs (1, -1)
+    if cmd.name == "kill" {
+        if let Some(result) = kill::check_kill(cmd) {
             return result;
         }
     }
@@ -620,7 +718,12 @@ fn format_reason(command: &str, result: &PermissionResult) -> String {
 /// Shorten a long command for display
 fn shorten_command(command: &str) -> &str {
     if command.len() > 60 {
-        &command[..60]
+        // Find a valid char boundary at or before 60 bytes
+        let mut end = 60;
+        while !command.is_char_boundary(end) && end > 0 {
+            end -= 1;
+        }
+        &command[..end]
     } else {
         command
     }
@@ -726,6 +829,20 @@ mod tests {
     }
 
     #[test]
+    fn test_kubectl_namespace_before_exec_env() {
+        let config = test_config();
+        // Test the exact problematic command: -n comes before exec
+        let result = analyze_command(
+            "kubectl -n external2-env exec deploy/api -- env 2>/dev/null | grep -i openai",
+            &config,
+            false,
+            None,
+        );
+        // kubectl exec unwraps to env, which is allowed; grep is also allowed
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
     fn test_kubectl_get_allowed() {
         let config = test_config();
         let result = analyze_command("kubectl get pods", &config, false, None);
@@ -734,27 +851,71 @@ mod tests {
     }
 
     #[test]
-    fn test_sed_allowed() {
+    fn test_sed_inline_allowed() {
         let config = test_config();
         let result = analyze_command("echo test | sed 's/t/x/'", &config, false, None);
-        // sed without -i is allowed
         assert_eq!(result.permission, Permission::Allow);
     }
 
     #[test]
-    fn test_sed_i_asks_without_edit_mode() {
+    fn test_sed_n_inline_allowed() {
+        let config = test_config();
+        let result = analyze_command("sed -n '5p' file.txt", &config, false, None);
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_sed_i_denied() {
         let config = test_config();
         let result = analyze_command("sed -i 's/foo/bar/' file.txt", &config, false, None);
-        // sed -i explicitly asks when not in edit mode (safety feature)
-        assert_eq!(result.permission, Permission::Ask);
+        assert_eq!(result.permission, Permission::Deny);
     }
 
     #[test]
-    fn test_sed_i_allowed_with_edit_mode() {
+    fn test_sed_i_suffix_denied() {
         let config = test_config();
-        let result = analyze_command("sed -i 's/foo/bar/' file.txt", &config, true, None);
-        // sed -i allowed when in edit mode
+        // sed -i.bak is also in-place
+        let result = analyze_command("sed -i.bak 's/foo/bar/' file.txt", &config, false, None);
+        assert_eq!(result.permission, Permission::Deny);
+    }
+
+    #[test]
+    fn test_awk_inline_allowed() {
+        let config = test_config();
+        let result = analyze_command("awk '{print $1}' file.txt", &config, false, None);
         assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_perl_inline_allowed() {
+        let config = test_config();
+        // perl -pe without -i is just a pipeline filter
+        let result = analyze_command("echo test | perl -pe 's/foo/bar/'", &config, false, None);
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_perl_i_denied() {
+        let config = test_config();
+        let result = analyze_command("perl -i -pe 's/foo/bar/' file.txt", &config, false, None);
+        assert_eq!(result.permission, Permission::Deny);
+    }
+
+    #[test]
+    fn test_perl_pi_denied() {
+        let config = test_config();
+        // -pi combines -p and -i flags
+        let result = analyze_command("perl -pi -e 's/foo/bar/' file.txt", &config, false, None);
+        assert_eq!(result.permission, Permission::Deny);
+    }
+
+    #[test]
+    fn test_perl_pie_denied() {
+        let config = test_config();
+        // -pie combines -p, -i, -e flags
+        let result =
+            analyze_command("perl -pie 's/foo/bar/' file.txt", &config, false, None);
+        assert_eq!(result.permission, Permission::Deny);
     }
 
     #[test]
@@ -1000,5 +1161,41 @@ mod tests {
         let result = analyze_command("nu -c 'rm ~/Documents/important.txt'", &config, false, None);
         // rm outside /tmp is dangerous
         assert_eq!(result.permission, Permission::Passthrough);
+    }
+
+    // docker compose exec tests (local vs remote)
+
+    #[test]
+    fn test_docker_compose_exec_local_allowed() {
+        let config = test_config();
+        let result = analyze_command("docker compose exec web bash", &config, false, None);
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_docker_compose_exec_through_ssh() {
+        let config = test_config();
+        // Through SSH, should fall through to wrapper analysis
+        // Inner command "bash" is not in allowed list, so passthrough
+        let result = analyze_command(
+            "ssh host 'docker compose exec web bash'",
+            &config,
+            false,
+            None,
+        );
+        assert_eq!(result.permission, Permission::Passthrough);
+    }
+
+    #[test]
+    fn test_docker_compose_exec_through_ssh_safe_inner() {
+        let config = test_config();
+        // Through SSH with a safe inner command - still analyzed via wrapper
+        let result = analyze_command(
+            "ssh host 'docker compose exec web ls -la'",
+            &config,
+            false,
+            None,
+        );
+        assert_eq!(result.permission, Permission::Allow);
     }
 }

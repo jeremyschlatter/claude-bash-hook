@@ -1,4 +1,4 @@
-//! SQL query analysis for mysql/mariadb/sqlite3 commands
+//! SQL query analysis for mysql/mariadb/sqlite3/clickhouse commands
 
 use crate::analyzer::Command;
 use crate::config::{Permission, PermissionResult};
@@ -17,8 +17,46 @@ fn strip_quotes(query: &str) -> String {
     query.to_string()
 }
 
+/// Strip SQL comments from a query
+fn strip_sql_comments(query: &str) -> String {
+    let mut result = String::new();
+    let mut chars = query.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        // Single-line comment: -- until end of line
+        if c == '-' && chars.peek() == Some(&'-') {
+            chars.next(); // consume second -
+            // Skip until newline
+            while let Some(nc) = chars.next() {
+                if nc == '\n' {
+                    result.push('\n');
+                    break;
+                }
+            }
+            continue;
+        }
+        // Multi-line comment: /* ... */
+        if c == '/' && chars.peek() == Some(&'*') {
+            chars.next(); // consume *
+            // Skip until */
+            while let Some(nc) = chars.next() {
+                if nc == '*' && chars.peek() == Some(&'/') {
+                    chars.next(); // consume /
+                    break;
+                }
+            }
+            continue;
+        }
+        result.push(c);
+    }
+
+    result
+}
+
 /// Check if a SQL query is read-only
 fn check_query_readonly(query: &str) -> PermissionResult {
+    // Strip comments first
+    let query = strip_sql_comments(query);
     // Read-only SQL statements
     let read_only_prefixes = [
         "SELECT",
@@ -134,6 +172,38 @@ pub fn check_piped_query(query: &str) -> PermissionResult {
 pub fn check_sqlite3_query(cmd: &Command) -> Option<PermissionResult> {
     let query = extract_sqlite3_query(cmd)?;
     Some(check_query_readonly(&strip_quotes(query)))
+}
+
+/// Extract query from clickhouse-client command
+fn extract_clickhouse_query(cmd: &Command) -> Option<String> {
+    let mut iter = cmd.args.iter().enumerate();
+    while let Some((idx, arg)) = iter.next() {
+        if arg == "-q" || arg == "--query" {
+            // Check if next arg starts with escaped quote - if so, join until closing quote
+            if let Some(next) = cmd.args.get(idx + 1) {
+                if next.starts_with("\\\"") || next.starts_with("\"") {
+                    // Join all args from here until we find one ending with escaped quote
+                    let remaining: Vec<&str> =
+                        cmd.args[idx + 1..].iter().map(|s| s.as_str()).collect();
+                    return Some(remaining.join(" "));
+                }
+                return Some(next.clone());
+            }
+            return None;
+        } else if arg.starts_with("-q") && arg.len() > 2 {
+            // Handle -q"query" (no space)
+            return Some(arg[2..].to_string());
+        } else if arg.starts_with("--query=") {
+            return Some(arg[8..].to_string());
+        }
+    }
+    None
+}
+
+/// Check if a clickhouse-client command has a read-only query
+pub fn check_clickhouse_query(cmd: &Command) -> Option<PermissionResult> {
+    let query = extract_clickhouse_query(cmd)?;
+    Some(check_query_readonly(&strip_quotes(&query)))
 }
 
 #[cfg(test)]
@@ -295,5 +365,113 @@ mod tests {
         let result = check_mysql_query(&cmd);
         assert!(result.is_some());
         assert_eq!(result.unwrap().permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_single_line_comment_allowed() {
+        let cmd = make_cmd(
+            "mysql",
+            &["-e", "-- This is a comment\nSELECT * FROM users"],
+        );
+        let result = check_mysql_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_multiline_comment_allowed() {
+        let cmd = make_cmd("mysql", &["-e", "/* Check users */ SELECT * FROM users"]);
+        let result = check_mysql_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_comment_with_complex_select() {
+        let query = "-- Check when Dart guests were created\n   SELECT DATE_FORMAT(create_date, '%Y-%m') AS month FROM guests";
+        let cmd = make_cmd("mysql", &["-e", query]);
+        let result = check_mysql_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    // ClickHouse tests
+
+    #[test]
+    fn test_clickhouse_select_allowed() {
+        let cmd = make_cmd("clickhouse-client", &["-q", "SELECT * FROM users"]);
+        let result = check_clickhouse_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_clickhouse_select_with_quotes() {
+        let cmd = make_cmd(
+            "clickhouse-client",
+            &["-q", "\"SELECT count() FROM users\""],
+        );
+        let result = check_clickhouse_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_clickhouse_show_allowed() {
+        let cmd = make_cmd("clickhouse-client", &["--query", "SHOW DATABASES"]);
+        let result = check_clickhouse_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_clickhouse_describe_allowed() {
+        let cmd = make_cmd("clickhouse-client", &["-q", "DESCRIBE TABLE users"]);
+        let result = check_clickhouse_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_clickhouse_insert_asks() {
+        let cmd = make_cmd(
+            "clickhouse-client",
+            &["-q", "INSERT INTO users VALUES (1, 'test')"],
+        );
+        let result = check_clickhouse_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Ask);
+    }
+
+    #[test]
+    fn test_clickhouse_drop_asks() {
+        let cmd = make_cmd("clickhouse-client", &["-q", "DROP TABLE users"]);
+        let result = check_clickhouse_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Ask);
+    }
+
+    #[test]
+    fn test_clickhouse_no_query_returns_none() {
+        let cmd = make_cmd("clickhouse-client", &["--host", "localhost"]);
+        let result = check_clickhouse_query(&cmd);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_clickhouse_query_equals_form() {
+        let cmd = make_cmd("clickhouse-client", &["--query=SHOW TABLES"]);
+        let result = check_clickhouse_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_clickhouse_union_all_allowed() {
+        let query = "SELECT 'a' as tbl, count() FROM a UNION ALL SELECT 'b', count() FROM b";
+        let cmd = make_cmd("clickhouse-client", &["-q", query]);
+        let result = check_clickhouse_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_clickhouse_multiline_select_allowed() {
+        let query = "
+   SELECT 'activity_tracking' as tbl, countIf(utm_id IS NOT NULL) as ch_with_utm FROM activity_tracking
+   UNION ALL SELECT 'sessions', countIf(utm_id IS NOT NULL) FROM sessions
+   ";
+        let cmd = make_cmd("clickhouse-client", &["-q", query]);
+        let result = check_clickhouse_query(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
     }
 }

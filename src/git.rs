@@ -39,6 +39,31 @@ pub fn check_git_checkout(cmd: &Command) -> Option<PermissionResult> {
     })
 }
 
+/// Check if a git reset should be allowed
+/// --hard discards changes and should ask, otherwise allow
+pub fn check_git_reset(cmd: &Command) -> Option<PermissionResult> {
+    // Only handle git reset
+    if cmd.name != "git" || cmd.args.first().map(|s| s.as_str()) != Some("reset") {
+        return None;
+    }
+
+    // git reset --hard - destructive, can lose uncommitted changes
+    if cmd.args.iter().any(|a| a == "--hard") {
+        return Some(PermissionResult {
+            permission: Permission::Deny,
+            reason: "git reset --hard discards changes".to_string(),
+            suggestion: None,
+        });
+    }
+
+    // git reset (soft/mixed) - safe, just moves HEAD/unstages
+    Some(PermissionResult {
+        permission: Permission::Allow,
+        reason: "git reset (no --hard)".to_string(),
+        suggestion: None,
+    })
+}
+
 /// Check if a git push should be allowed
 pub fn check_git_push(
     cmd: &Command,
@@ -284,5 +309,49 @@ mod tests {
         let cmd = make_cmd(&["status"]);
         let result = check_git_checkout(&cmd);
         assert!(result.is_none());
+    }
+
+    // Git reset tests
+
+    #[test]
+    fn test_reset_hard_denied() {
+        let cmd = make_cmd(&["reset", "--hard"]);
+        let result = check_git_reset(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Deny);
+    }
+
+    #[test]
+    fn test_reset_hard_with_ref_denied() {
+        let cmd = make_cmd(&["reset", "--hard", "HEAD~1"]);
+        let result = check_git_reset(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Deny);
+    }
+
+    #[test]
+    fn test_reset_soft_allows() {
+        let cmd = make_cmd(&["reset", "--soft", "HEAD~1"]);
+        let result = check_git_reset(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_reset_mixed_allows() {
+        let cmd = make_cmd(&["reset", "--mixed", "HEAD~1"]);
+        let result = check_git_reset(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_reset_no_flags_allows() {
+        let cmd = make_cmd(&["reset", "HEAD~1"]);
+        let result = check_git_reset(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_reset_unstage_allows() {
+        let cmd = make_cmd(&["reset", "file.txt"]);
+        let result = check_git_reset(&cmd).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
     }
 }

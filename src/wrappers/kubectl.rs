@@ -3,9 +3,54 @@
 use crate::analyzer::Command;
 use crate::wrappers::UnwrapResult;
 
+/// Options that consume the next argument
+const OPTS_WITH_ARGS: &[&str] = &[
+    "-n",
+    "--namespace",
+    "-c",
+    "--container",
+    "--context",
+    "--kubeconfig",
+    "-l",
+    "--selector",
+    "-f",
+    "--filename",
+    "-o",
+    "--output",
+    "--image",
+    "--target",
+];
+
+/// Find the subcommand, skipping flags
+fn find_subcommand(args: &[String]) -> Option<&str> {
+    let mut skip_next = false;
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        // Check if this option takes an argument
+        if OPTS_WITH_ARGS.iter().any(|opt| arg == *opt) {
+            skip_next = true;
+            continue;
+        }
+        // Skip --opt=value style
+        if arg.starts_with("--") && arg.contains('=') {
+            continue;
+        }
+        // Skip other flags
+        if arg.starts_with('-') {
+            continue;
+        }
+        // Found the subcommand
+        return Some(arg.as_str());
+    }
+    None
+}
+
 /// Unwrap kubectl exec or debug command
 pub fn unwrap(cmd: &Command) -> Option<UnwrapResult> {
-    let subcommand = cmd.args.first().map(|s| s.as_str())?;
+    let subcommand = find_subcommand(&cmd.args)?;
     if subcommand != "exec" && subcommand != "debug" {
         return None;
     }
@@ -71,6 +116,15 @@ mod tests {
         let cmd = make_cmd(&["exec", "-n", "prod", "mypod", "--", "rm", "-rf", "/tmp"]);
         let result = unwrap(&cmd).unwrap();
         assert_eq!(result.inner_command, Some("rm -rf /tmp".to_string()));
+    }
+
+    #[test]
+    fn test_kubectl_namespace_before_exec() {
+        // kubectl -n namespace exec pod -- command
+        let cmd = make_cmd(&["-n", "external2-env", "exec", "deploy/api", "--", "env"]);
+        let result = unwrap(&cmd).unwrap();
+        assert_eq!(result.inner_command, Some("env".to_string()));
+        assert_eq!(result.wrapper, "kubectl exec");
     }
 
     #[test]

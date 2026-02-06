@@ -207,6 +207,7 @@ dependencies = [
  "nu-engine",
  "nu-parser",
  "nu-protocol",
+ "regex",
  "serde",
  "serde_json",
  "systemd-journal-logger",
