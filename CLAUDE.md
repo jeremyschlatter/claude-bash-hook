@@ -11,6 +11,10 @@ PreToolUse hook for Claude Code that provides granular permission control over B
 - **wrappers/** - Unwrap wrapper commands to analyze inner commands:
   - Config-driven: sudo, authsudo, nice, nohup, time, strace, ltrace, nu, fish
   - Special handling: ssh, scp, rsync, env, kubectl exec, docker exec/compose, timeout, xargs, sh/bash/zsh, kitty-remote, wezterm-remote
+- **scripts/** - Script content analysis (parses inline code to allow safe read-only scripts):
+  - python.rs - Python via `-c` or heredoc (allows file I/O, denies subprocess/os.system/eval)
+  - shell.rs - Shell scripts via `sh -c` / `bash -c` (re-parses inner commands through the same rule engine)
+  - php.rs - PHP via `-r` flag (allows read-only operations, denies exec/system/passthru)
 - **sql.rs** - MySQL/MariaDB/SQLite query analysis (allow SELECT, ask for writes)
 - **redis.rs** - Redis command analysis (allow read-only commands like GET/LLEN, ask for writes)
 - **git.rs** - Git-specific rules (push branch protection, checkout handling)

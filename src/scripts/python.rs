@@ -157,12 +157,11 @@ fn extract_heredoc_code(full_command: &str) -> Option<String> {
     let delimiter = caps.get(1)?.as_str();
     let delim_end = caps.get(0)?.end();
 
-    // Find where the delimiter appears at the start of a line
+    // Find where the delimiter appears on its own line (possibly indented)
     let rest = &full_command[delim_end..];
-    let end_pattern = format!("\n{}", delimiter);
-
-    let content_end = rest.find(&end_pattern)?;
-    Some(rest[..content_end].to_string())
+    let end_re = Regex::new(&format!(r"\n[ \t]*{}", regex::escape(delimiter))).ok()?;
+    let m = end_re.find(rest)?;
+    Some(rest[..m.start()].to_string())
 }
 
 /// Extract file paths from open() calls with write modes
@@ -491,6 +490,22 @@ mod tests {
         let full_cmd =
             "python3 << 'EOF'\nwith open('/project/file.txt', 'w') as f:\n    f.write('data')\nEOF";
         let result = check_python_script(&cmd, Some(full_cmd), Some("/project")).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_heredoc_indented_delimiter_allowed() {
+        let cmd = make_cmd("python3", &[]);
+        let full_cmd = "python3 << 'PYEOF'\nimport csv\nprint('hello')\n      PYEOF";
+        let result = check_python_script(&cmd, Some(full_cmd), None).unwrap();
+        assert_eq!(result.permission, Permission::Allow);
+    }
+
+    #[test]
+    fn test_heredoc_tab_indented_delimiter_allowed() {
+        let cmd = make_cmd("python3", &[]);
+        let full_cmd = "python3 <<- 'EOF'\n\tprint('hello')\n\tEOF";
+        let result = check_python_script(&cmd, Some(full_cmd), None).unwrap();
         assert_eq!(result.permission, Permission::Allow);
     }
 
