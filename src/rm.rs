@@ -4,8 +4,8 @@
 
 use crate::analyzer::Command;
 use crate::config::{Permission, PermissionResult};
+use crate::paths;
 use std::path::Path;
-use std::process::Command as ProcessCommand;
 
 /// Check if an rm command should be auto-allowed
 /// Allows deletion of files under /tmp/ or the project directory (initial_cwd)
@@ -66,14 +66,14 @@ fn is_safe_path(path: &str, virtual_cwd: Option<&str>, initial_cwd: Option<&str>
         return false;
     };
 
-    let resolved = match resolve_path(&abs_path) {
+    let resolved = match paths::resolve_path(&abs_path) {
         Some(p) => p,
         None => {
             // Path doesn't exist - check parent
             if let Some(parent) = Path::new(&abs_path).parent() {
                 if let Some(parent_str) = parent.to_str() {
                     if !parent_str.is_empty() {
-                        if let Some(resolved_parent) = resolve_path(parent_str) {
+                        if let Some(resolved_parent) = paths::resolve_path(parent_str) {
                             return is_under_allowed_dir(&resolved_parent, initial_cwd);
                         }
                     }
@@ -88,12 +88,8 @@ fn is_safe_path(path: &str, virtual_cwd: Option<&str>, initial_cwd: Option<&str>
 
 /// Check if a resolved path is under /tmp/ or project dir
 fn is_under_allowed_dir(resolved: &str, initial_cwd: Option<&str>) -> bool {
-    // Allow /tmp/
-    if resolved.starts_with("/tmp/") {
-        let after = &resolved[5..];
-        if !after.is_empty() && !after.chars().all(|c| c == '/') {
-            return true;
-        }
+    if paths::under_tmp(resolved).is_some() {
+        return true;
     }
 
     // Allow project directory
@@ -110,25 +106,6 @@ fn is_under_allowed_dir(resolved: &str, initial_cwd: Option<&str>) -> bool {
     }
 
     false
-}
-
-/// Resolve a path using realpath
-fn resolve_path(path: &str) -> Option<String> {
-    let output = ProcessCommand::new("realpath")
-        .arg("-m") // don't require path to exist
-        .arg("--")
-        .arg(path)
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !resolved.is_empty() {
-            return Some(resolved);
-        }
-    }
-
-    None
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@
 
 use crate::analyzer::Command;
 use crate::config::{Permission, PermissionResult};
-use std::process::Command as ProcessCommand;
+use crate::paths;
 
 /// Check if a tee command should be auto-allowed
 /// Allows writing to files under /tmp/
@@ -56,18 +56,16 @@ fn is_safe_tmp_path(path: &str) -> bool {
         return false;
     }
 
-    // Use realpath to resolve the path
-    let resolved = match resolve_path(path) {
+    let resolved = match paths::resolve_path(path) {
         Some(p) => p,
         None => {
-            // realpath failed - path might not exist
+            // resolve failed - path might not exist
             // Try to check the parent directory for paths that don't exist yet
             if let Some(parent) = std::path::Path::new(path).parent() {
                 if let Some(parent_str) = parent.to_str() {
                     if !parent_str.is_empty() {
-                        if let Some(resolved_parent) = resolve_path(parent_str) {
-                            // Check if parent is under /tmp
-                            return is_under_tmp(&resolved_parent);
+                        if let Some(resolved_parent) = paths::resolve_path(parent_str) {
+                            return paths::under_tmp(&resolved_parent).is_some();
                         }
                     }
                 }
@@ -76,51 +74,7 @@ fn is_safe_tmp_path(path: &str) -> bool {
         }
     };
 
-    is_under_tmp(&resolved)
-}
-
-/// Check if a resolved path is under /tmp/
-fn is_under_tmp(resolved: &str) -> bool {
-    // Must start with /tmp/
-    if !resolved.starts_with("/tmp/") {
-        // Don't allow writing to /tmp itself
-        if resolved == "/tmp" {
-            return false;
-        }
-        return false;
-    }
-
-    // Must have something after /tmp/
-    let after = &resolved[5..]; // len("/tmp/") = 5
-    if after.is_empty() {
-        return false;
-    }
-
-    // Reject if it's just /tmp/ with trailing slashes
-    if after.chars().all(|c| c == '/') {
-        return false;
-    }
-
-    true
-}
-
-/// Resolve a path using realpath
-fn resolve_path(path: &str) -> Option<String> {
-    let output = ProcessCommand::new("realpath")
-        .arg("-m") // don't require path to exist
-        .arg("--")
-        .arg(path)
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !resolved.is_empty() {
-            return Some(resolved);
-        }
-    }
-
-    None
+    paths::under_tmp(&resolved).is_some()
 }
 
 #[cfg(test)]

@@ -14,8 +14,10 @@ nu-parser = "=0.109.1"
 nu-protocol = "=0.109.1"
 nu-engine = "=0.109.1"
 log = "0.4"
-systemd-journal-logger = "2"
 regex = "1.12.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+systemd-journal-logger = "2"
 
 [profile.release]
 lto = false

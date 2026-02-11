@@ -10,6 +10,7 @@ mod docker;
 mod git;
 mod kill;
 mod nushell;
+mod paths;
 mod redis;
 mod rm;
 mod scripts;
@@ -71,8 +72,8 @@ struct HookSpecificOutput {
 /// Check if a Write tool path should be blocked
 /// Returns Some((decision, reason)) if we should output a decision, None to pass through
 fn check_write_path(path: &str) -> Option<(&'static str, String)> {
-    // Block /tmp/* unless under /tmp/claude/*
-    if path.starts_with("/tmp/") && !path.starts_with("/tmp/claude/") {
+    // Block /tmp/* (or /private/tmp/*) unless under /tmp/claude/*
+    if paths::under_tmp(path).is_some_and(|p| !p.starts_with("claude/")) {
         return Some((
             "block",
             format!("Use /tmp/claude/ instead of /tmp/ for: {}", path),
@@ -98,11 +99,14 @@ fn output_decision(decision: &str, reason: &str) {
 }
 
 fn main() {
-    // Initialize journald logging (fails gracefully on non-systemd systems)
-    if let Ok(logger) = systemd_journal_logger::JournalLog::new() {
-        let _ = logger
-            .with_syslog_identifier("claude-bash-hook".to_string())
-            .install();
+    // Initialize journald logging (Linux only)
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(logger) = systemd_journal_logger::JournalLog::new() {
+            let _ = logger
+                .with_syslog_identifier("claude-bash-hook".to_string())
+                .install();
+        }
     }
     log::set_max_level(log::LevelFilter::Info);
     // Read input from stdin

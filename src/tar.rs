@@ -4,9 +4,7 @@
 
 use crate::analyzer::Command;
 use crate::config::{Permission, PermissionResult};
-use std::process::Command as ProcessCommand;
-
-const SAFE_PREFIX: &str = "/tmp/claude/";
+use crate::paths;
 
 /// Check if a tar command should be auto-allowed
 /// Allows:
@@ -88,23 +86,18 @@ pub fn check_tar(
 fn is_cwd_safe(virtual_cwd: Option<&str>) -> bool {
     // First check virtual_cwd (from cd commands in the chain)
     if let Some(vcwd) = virtual_cwd {
-        if let Some(resolved) = resolve_path(vcwd) {
-            if resolved.starts_with(SAFE_PREFIX) {
+        if let Some(resolved) = paths::resolve_path(vcwd) {
+            if paths::under_tmp(&resolved).is_some_and(|p| p.starts_with("claude/")) {
                 return true;
             }
         }
     }
 
     // Fall back to actual cwd
-    is_cwd_under_tmp_claude()
-}
-
-/// Check if current working directory is under /tmp/claude/
-fn is_cwd_under_tmp_claude() -> bool {
     if let Ok(cwd) = std::env::current_dir() {
         if let Some(cwd_str) = cwd.to_str() {
-            if let Some(resolved) = resolve_path(cwd_str) {
-                return resolved.starts_with(SAFE_PREFIX);
+            if let Some(resolved) = paths::resolve_path(cwd_str) {
+                return paths::under_tmp(&resolved).is_some_and(|p| p.starts_with("claude/"));
             }
         }
     }
@@ -139,49 +132,21 @@ fn find_target_dir(args: &[String]) -> Option<&str> {
     None
 }
 
-/// Check if a path is safely under /tmp/claude/
+/// Check if a path is safely under /tmp/claude/<something>
 fn is_safe_tmp_claude_path(path: &str) -> bool {
     if path.is_empty() || path.contains('\0') || path.contains('\n') {
         return false;
     }
 
-    // Use realpath to resolve the path
-    let resolved = match resolve_path(path) {
+    let resolved = match paths::resolve_path(path) {
         Some(p) => p,
         None => return false,
     };
 
-    // Must start with /tmp/claude/
-    if !resolved.starts_with(SAFE_PREFIX) {
-        return false;
-    }
-
-    // Must have something after /tmp/claude/
-    let after_prefix = &resolved[SAFE_PREFIX.len()..];
-    if after_prefix.is_empty() || after_prefix.chars().all(|c| c == '/') {
-        return false;
-    }
-
-    true
-}
-
-/// Resolve a path using realpath
-fn resolve_path(path: &str) -> Option<String> {
-    let output = ProcessCommand::new("realpath")
-        .arg("-m")
-        .arg("--")
-        .arg(path)
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !resolved.is_empty() {
-            return Some(resolved);
-        }
-    }
-
-    None
+    paths::under_tmp(&resolved).is_some_and(|p| {
+        p.strip_prefix("claude/")
+            .is_some_and(|rest| !rest.is_empty() && !rest.chars().all(|c| c == '/'))
+    })
 }
 
 #[cfg(test)]
