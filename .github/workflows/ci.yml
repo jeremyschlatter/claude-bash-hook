@@ -8,11 +8,13 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 

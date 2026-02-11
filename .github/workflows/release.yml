@@ -19,6 +19,9 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             name: linux-arm64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: macos-arm64
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -58,6 +61,7 @@ jobs:
           mkdir -p release
           mv artifacts/claude-bash-hook-linux-amd64/claude-bash-hook-linux-amd64 release/
           mv artifacts/claude-bash-hook-linux-arm64/claude-bash-hook-linux-arm64 release/
+          mv artifacts/claude-bash-hook-macos-arm64/claude-bash-hook-macos-arm64 release/
           chmod +x release/*
 
       - name: Create Release
