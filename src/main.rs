@@ -913,8 +913,7 @@ mod tests {
     fn test_perl_pie_denied() {
         let config = test_config();
         // -pie combines -p, -i, -e flags
-        let result =
-            analyze_command("perl -pie 's/foo/bar/' file.txt", &config, false, None);
+        let result = analyze_command("perl -pie 's/foo/bar/' file.txt", &config, false, None);
         assert_eq!(result.permission, Permission::Deny);
     }
 
