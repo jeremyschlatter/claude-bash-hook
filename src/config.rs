@@ -154,6 +154,17 @@ impl Config {
         Self::default()
     }
 
+    /// Merge a project-level config into this config.
+    /// Project rules are prepended (checked first), wrappers and suggestions are appended.
+    pub fn merge_project(&mut self, project: Config) {
+        let mut merged_rules = project.rules;
+        merged_rules.append(&mut self.rules);
+        self.rules = merged_rules;
+
+        self.wrappers.extend(project.wrappers);
+        self.suggestions.extend(project.suggestions);
+    }
+
     /// Get wrapper config by command name
     pub fn get_wrapper(&self, name: &str) -> Option<&WrapperConfig> {
         self.wrappers.iter().find(|w| w.command == name)

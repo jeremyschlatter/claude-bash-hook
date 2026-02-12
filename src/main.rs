@@ -171,7 +171,16 @@ fn main() {
     };
 
     // Load config
-    let config = Config::load_or_default();
+    let mut config = Config::load_or_default();
+    if let Some(ref cwd) = hook_input.cwd {
+        let project_config_path = std::path::Path::new(cwd).join(".claude/claude-bash-hook.toml");
+        if project_config_path.exists() {
+            match Config::load(&project_config_path) {
+                Ok(project_config) => config.merge_project(project_config),
+                Err(e) => eprintln!("Warning: project config: {}", e),
+            }
+        }
+    }
     let edit_mode = edits_allowed(hook_input.permission_mode.as_deref());
 
     // Analyze the command (bash or nushell)
