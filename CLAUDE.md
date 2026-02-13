@@ -117,8 +117,16 @@ cargo test
 
 ## Logging
 
-Logs to journald with identifier `claude-bash-hook`:
+**Linux** - Logs to journald with identifier `claude-bash-hook`:
 
 ```bash
 journalctl -t claude-bash-hook -f
+```
+
+**macOS** - Logs to Apple's Unified Logging with subsystem `com.osso.claude-bash-hook`:
+
+```bash
+log stream --predicate 'subsystem == "com.osso.claude-bash-hook"'
+# or historical:
+log show --predicate 'subsystem == "com.osso.claude-bash-hook"' --last 1h
 ```

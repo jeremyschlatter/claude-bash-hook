@@ -99,7 +99,7 @@ fn output_decision(decision: &str, reason: &str) {
 }
 
 fn main() {
-    // Initialize journald logging (Linux only)
+    // Initialize platform logging
     #[cfg(target_os = "linux")]
     {
         if let Ok(logger) = systemd_journal_logger::JournalLog::new() {
@@ -107,6 +107,12 @@ fn main() {
                 .with_syslog_identifier("claude-bash-hook".to_string())
                 .install();
         }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = oslog::OsLogger::new("com.osso.claude-bash-hook")
+            .level_filter(log::LevelFilter::Info)
+            .init();
     }
     log::set_max_level(log::LevelFilter::Info);
     // Read input from stdin
