@@ -50,7 +50,7 @@ pub fn check_git_reset(cmd: &Command) -> Option<PermissionResult> {
     // git reset --hard - destructive, can lose uncommitted changes
     if cmd.args.iter().any(|a| a == "--hard") {
         return Some(PermissionResult {
-            permission: Permission::Deny,
+            permission: Permission::Ask,
             reason: "git reset --hard discards changes".to_string(),
             suggestion: None,
         });
@@ -317,14 +317,14 @@ mod tests {
     fn test_reset_hard_denied() {
         let cmd = make_cmd(&["reset", "--hard"]);
         let result = check_git_reset(&cmd).unwrap();
-        assert_eq!(result.permission, Permission::Deny);
+        assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]
     fn test_reset_hard_with_ref_denied() {
         let cmd = make_cmd(&["reset", "--hard", "HEAD~1"]);
         let result = check_git_reset(&cmd).unwrap();
-        assert_eq!(result.permission, Permission::Deny);
+        assert_eq!(result.permission, Permission::Ask);
     }
 
     #[test]

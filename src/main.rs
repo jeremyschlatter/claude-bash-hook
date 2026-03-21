@@ -1216,4 +1216,24 @@ mod tests {
         );
         assert_eq!(result.permission, Permission::Allow);
     }
+
+    #[test]
+    fn test_comma_wrapper() {
+        let config_str = r#"
+            default = "passthrough"
+            [[rules]]
+            commands = ["uv"]
+            permission = "allow"
+            reason = "uv is safe"
+
+            [[wrappers]]
+            command = ","
+            opts_with_args = []
+        "#;
+        let config: Config = toml::from_str(config_str).unwrap();
+
+        // ", uv run foo.py" should unwrap to "uv run foo.py", which matches the allow rule
+        let result = analyze_command(", uv run foo.py", &config, false, None);
+        assert_eq!(result.permission, Permission::Allow);
+    }
 }
